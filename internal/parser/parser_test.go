@@ -1,6 +1,7 @@
 package parser_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/phasecurve/readme-merge/internal/parser"
@@ -67,5 +68,41 @@ func TestParseMultiplePlaceholders(t *testing.T) {
 	}
 	if blocks[0].From != "a.go" || blocks[1].From != "b.go" {
 		t.Errorf("wrong file refs: %q, %q", blocks[0].From, blocks[1].From)
+	}
+}
+
+func TestRenderNewBlock(t *testing.T) {
+	original := "# Title\n\n<!-- code from=examples/client.go lines=10-12 -->\n<!-- /code -->\n\nMore text.\n"
+
+	blocks, _ := parser.Parse(original)
+	blocks[0].Content = "fmt.Println(\"hello\")\n"
+	blocks[0].FileHash = "aaaa1234aaaa1234"
+	blocks[0].SnippetHash = "bbbb1234bbbb1234"
+	blocks[0].LineStart = 10
+	blocks[0].LineEnd = 12
+
+	got := parser.Render(original, blocks)
+
+	want := "# Title\n\n<!-- code from=examples/client.go lines=10-12 filehash=aaaa1234aaaa1234 snippethash=bbbb1234bbbb1234 -->\n```go\nfmt.Println(\"hello\")\n```\n<!-- /code -->\n\nMore text.\n"
+	if got != want {
+		t.Errorf("Render mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRenderPreservesUnchangedText(t *testing.T) {
+	original := "Line 1\nLine 2\n<!-- code from=a.txt lines=1-1 -->\n<!-- /code -->\nLine 5\n"
+
+	blocks, _ := parser.Parse(original)
+	blocks[0].Content = "hello\n"
+	blocks[0].FileHash = "aaaa1234aaaa1234"
+	blocks[0].SnippetHash = "bbbb1234bbbb1234"
+
+	got := parser.Render(original, blocks)
+
+	if !strings.HasPrefix(got, "Line 1\nLine 2\n") {
+		t.Errorf("text before block was modified")
+	}
+	if !strings.HasSuffix(got, "Line 5\n") {
+		t.Errorf("text after block was modified")
 	}
 }

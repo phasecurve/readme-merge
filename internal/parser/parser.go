@@ -82,3 +82,58 @@ func Parse(input string) ([]Block, error) {
 
 	return blocks, nil
 }
+
+func langFromPath(path string) string {
+	idx := strings.LastIndex(path, ".")
+	if idx == -1 {
+		return ""
+	}
+	ext := path[idx+1:]
+	langs := map[string]string{
+		"go": "go", "py": "python", "js": "javascript", "ts": "typescript",
+		"rs": "rust", "rb": "ruby", "java": "java", "sh": "bash",
+		"bash": "bash", "zsh": "bash", "c": "c", "cpp": "cpp", "h": "c",
+		"yaml": "yaml", "yml": "yaml", "json": "json", "toml": "toml",
+		"sql": "sql", "html": "html", "css": "css", "md": "markdown",
+	}
+	if l, ok := langs[ext]; ok {
+		return l
+	}
+	return ext
+}
+
+func Render(original string, blocks []Block) string {
+	lines := strings.Split(original, "\n")
+	var result []string
+	prevEnd := 0
+
+	for _, b := range blocks {
+		result = append(result, lines[prevEnd:b.StartLine]...)
+
+		header := fmt.Sprintf("<!-- code from=%s lines=%d-%d",
+			b.From, b.LineStart, b.LineEnd)
+		if b.FileHash != "" {
+			header += " filehash=" + b.FileHash
+		}
+		if b.SnippetHash != "" {
+			header += " snippethash=" + b.SnippetHash
+		}
+		header += " -->"
+		result = append(result, header)
+
+		lang := langFromPath(b.From)
+		content := strings.TrimRight(b.Content, "\n")
+		result = append(result, "```"+lang)
+		result = append(result, content)
+		result = append(result, "```")
+		result = append(result, "<!-- /code -->")
+
+		prevEnd = b.EndLine + 1
+	}
+
+	if prevEnd < len(lines) {
+		result = append(result, lines[prevEnd:]...)
+	}
+
+	return strings.Join(result, "\n")
+}
