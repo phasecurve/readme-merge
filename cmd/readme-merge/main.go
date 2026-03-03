@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/phasecurve/readme-merge/internal/engine"
+	"github.com/phasecurve/readme-merge/internal/hook"
 	"github.com/phasecurve/readme-merge/internal/source"
 )
 
@@ -144,6 +145,24 @@ func runHook(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: readme-merge hook <install|uninstall>")
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stderr, "hook command not yet implemented")
-	os.Exit(1)
+
+	dir, _ := os.Getwd()
+
+	switch args[0] {
+	case "install":
+		if err := hook.Install(dir); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println("pre-commit hook installed")
+	case "uninstall":
+		if err := hook.Uninstall(dir); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Println("pre-commit hook removed")
+	default:
+		fmt.Fprintln(os.Stderr, "usage: readme-merge hook <install|uninstall>")
+		os.Exit(1)
+	}
 }
