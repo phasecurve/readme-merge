@@ -52,6 +52,35 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 		}
 
 		lines := strings.Split(fileContent, "\n")
+
+		if b.SnippetHash != "" {
+			lineCount := b.LineEnd - b.LineStart + 1
+
+			if b.LineEnd <= len(lines) {
+				selected := lines[b.LineStart-1 : b.LineEnd]
+				candidate := strings.Join(selected, "\n") + "\n"
+				if hasher.ContentHash(candidate) == b.SnippetHash {
+					b.Content = candidate
+					b.FileHash = hasher.ContentHash(fileContent)
+					result.Updated++
+					continue
+				}
+			}
+
+			start, end, found := scanner.FindSnippet(fileContent, b.SnippetHash, lineCount)
+			if found {
+				selected := lines[start-1 : end]
+				snippet := strings.Join(selected, "\n") + "\n"
+				b.LineStart = start
+				b.LineEnd = end
+				b.Content = snippet
+				b.FileHash = hasher.ContentHash(fileContent)
+				result.Healed++
+				result.Updated++
+				continue
+			}
+		}
+
 		if b.LineEnd > len(lines) || b.LineStart < 1 {
 			return nil, fmt.Errorf("block %s: line range %d-%d out of bounds (%d lines)",
 				b.From, b.LineStart, b.LineEnd, len(lines))
