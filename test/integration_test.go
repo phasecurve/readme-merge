@@ -20,7 +20,11 @@ func gitCheckout(t *testing.T, paths ...string) {
 }
 
 func projectRoot() string {
-	return filepath.Join(os.Getenv("HOME"), "dev", "readme-merge")
+	wd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Dir(wd)
 }
 
 func testdataDir(name string) string {
