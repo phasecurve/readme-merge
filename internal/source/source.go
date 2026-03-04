@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type Resolver struct {
@@ -17,10 +18,36 @@ func NewResolver(ref string, baseDir string) *Resolver {
 }
 
 func (r *Resolver) ReadFile(path string) (string, error) {
+	if err := validatePath(r.baseDir, path); err != nil {
+		return "", err
+	}
 	if r.ref == "" {
 		return r.readWorktree(path)
 	}
 	return r.readGitRef(path)
+}
+
+func validatePath(baseDir, path string) error {
+	if filepath.IsAbs(path) {
+		return fmt.Errorf("absolute paths not allowed: %s", path)
+	}
+	cleaned := filepath.Clean(path)
+	if strings.HasPrefix(cleaned, "..") {
+		return fmt.Errorf("path escapes project directory: %s", path)
+	}
+	full := filepath.Join(baseDir, cleaned)
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("resolving base directory: %w", err)
+	}
+	absFull, err := filepath.Abs(full)
+	if err != nil {
+		return fmt.Errorf("resolving path: %w", err)
+	}
+	if !strings.HasPrefix(absFull, absBase+string(filepath.Separator)) && absFull != absBase {
+		return fmt.Errorf("path escapes project directory: %s", path)
+	}
+	return nil
 }
 
 func (r *Resolver) readWorktree(path string) (string, error) {

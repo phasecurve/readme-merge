@@ -10,6 +10,85 @@ import (
 	"github.com/phasecurve/readme-merge/internal/source"
 )
 
+func TestUpdateReturnsWriteError(t *testing.T) {
+	dir := setupProject(t, map[string]string{
+		"src/main.go": "package main\n\nfunc hello() {\n\treturn\n}\n",
+		"README.md":   "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n",
+	})
+
+	os.Chmod(filepath.Join(dir, "README.md"), 0444)
+	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "README.md"), 0644) })
+
+	r := source.NewResolver("", dir)
+	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
+	if err == nil {
+		t.Fatal("expected error when README is read-only")
+	}
+	if !strings.Contains(err.Error(), "writing README") {
+		t.Errorf("expected 'writing README' error, got: %v", err)
+	}
+}
+
+func TestCheckReturnsWriteErrorOnSelfHeal(t *testing.T) {
+	dir := setupProject(t, map[string]string{
+		"src/main.go": "line1\nline2\ntarget\nline4\n",
+		"README.md":   "<!-- code from=src/main.go lines=3-3 -->\n<!-- /code -->\n",
+	})
+
+	r := source.NewResolver("", dir)
+	engine.Update(filepath.Join(dir, "README.md"), r)
+
+	os.WriteFile(filepath.Join(dir, "src/main.go"),
+		[]byte("new top\nline1\nline2\ntarget\nline4\n"), 0644)
+
+	os.Chmod(filepath.Join(dir, "README.md"), 0444)
+	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "README.md"), 0644) })
+
+	_, err := engine.Check(filepath.Join(dir, "README.md"), r)
+	if err == nil {
+		t.Fatal("expected error when self-heal can't write")
+	}
+	if !strings.Contains(err.Error(), "writing README") {
+		t.Errorf("expected 'writing README' error, got: %v", err)
+	}
+}
+
+func TestUpdateRejectsPathTraversal(t *testing.T) {
+	parent := t.TempDir()
+	os.WriteFile(filepath.Join(parent, "secret.txt"), []byte("leaked\n"), 0644)
+
+	dir := filepath.Join(parent, "proj")
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte(
+		"<!-- code from=../secret.txt lines=1-1 -->\n<!-- /code -->\n",
+	), 0644)
+
+	r := source.NewResolver("", dir)
+	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
+	if err == nil {
+		t.Fatal("expected error for path traversal through engine")
+	}
+	if !strings.Contains(err.Error(), "escapes project directory") {
+		t.Errorf("expected path escape error, got: %v", err)
+	}
+}
+
+func TestUpdateRejectsOutOfBoundsLines(t *testing.T) {
+	dir := setupProject(t, map[string]string{
+		"src/main.go": "line1\nline2\n",
+		"README.md":   "<!-- code from=src/main.go lines=1-99 -->\n<!-- /code -->\n",
+	})
+
+	r := source.NewResolver("", dir)
+	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
+	if err == nil {
+		t.Fatal("expected error for out-of-bounds line range")
+	}
+	if !strings.Contains(err.Error(), "out of bounds") {
+		t.Errorf("expected 'out of bounds' error, got: %v", err)
+	}
+}
+
 func setupProject(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -67,7 +67,9 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 	}
 
 	result.Output = parser.Render(content, blocks)
-	os.WriteFile(readmePath, []byte(result.Output), 0644)
+	if err := os.WriteFile(readmePath, []byte(result.Output), 0644); err != nil {
+		return nil, fmt.Errorf("writing README: %w", err)
+	}
 	return result, nil
 }
 
@@ -137,7 +139,9 @@ func Check(readmePath string, resolver *source.Resolver) (*CheckResult, error) {
 
 	if needsWrite {
 		output := parser.Render(content, blocks)
-		os.WriteFile(readmePath, []byte(output), 0644)
+		if err := os.WriteFile(readmePath, []byte(output), 0644); err != nil {
+			return nil, fmt.Errorf("writing README: %w", err)
+		}
 	}
 
 	return result, nil
