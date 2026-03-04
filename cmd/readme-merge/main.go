@@ -11,6 +11,12 @@ import (
 	"github.com/phasecurve/readme-merge/internal/source"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -24,6 +30,9 @@ func main() {
 		runCheck(os.Args[2:])
 	case "hook":
 		runHook(os.Args[2:])
+	case "version":
+		// TODO: implement version output
+		fmt.Println("readme-merge", version, commit, date)
 	default:
 		usage()
 		os.Exit(1)
@@ -31,12 +40,13 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: readme-merge <update|check|hook> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: readme-merge <command> [flags]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "commands:")
 	fmt.Fprintln(os.Stderr, "  update    populate/refresh all code placeholders")
 	fmt.Fprintln(os.Stderr, "  check     verify all placeholders are fresh (exit 1 if stale)")
 	fmt.Fprintln(os.Stderr, "  hook      install/uninstall git pre-commit hook")
+	fmt.Fprintln(os.Stderr, "  version   print version information")
 }
 
 func findReadme(dir string) (string, error) {
