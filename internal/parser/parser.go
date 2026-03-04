@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+func mustAtoi(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		panic("mustAtoi: " + err.Error())
+	}
+	return n
+}
+
 type Block struct {
 	From        string
 	LineStart   int
@@ -36,8 +44,8 @@ func Parse(input string) ([]Block, error) {
 			continue
 		}
 
-		lineStart, _ := strconv.Atoi(m[2])
-		lineEnd, _ := strconv.Atoi(m[3])
+		lineStart := mustAtoi(m[2])
+		lineEnd := mustAtoi(m[3])
 
 		b := Block{
 			From:        m[1],

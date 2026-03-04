@@ -7,10 +7,9 @@ import (
 	"strings"
 )
 
-const marker = "# --- readme-merge ---"
-const hookBlock = `# --- readme-merge ---
-readme-merge check --source=staged
-# --- /readme-merge ---`
+const openMarker = "# --- readme-merge ---"
+const closeMarker = "# --- /readme-merge ---"
+const hookBlock = openMarker + "\nreadme-merge check --source=staged\n" + closeMarker
 
 func Install(repoDir string) error {
 	hookPath := filepath.Join(repoDir, ".git", "hooks", "pre-commit")
@@ -21,7 +20,7 @@ func Install(repoDir string) error {
 	}
 
 	content := string(existing)
-	if strings.Contains(content, marker) {
+	if strings.Contains(content, openMarker) {
 		return nil
 	}
 
@@ -46,13 +45,13 @@ func Uninstall(repoDir string) error {
 	}
 
 	content := string(data)
-	startIdx := strings.Index(content, "# --- readme-merge ---")
-	endIdx := strings.Index(content, "# --- /readme-merge ---")
+	startIdx := strings.Index(content, openMarker)
+	endIdx := strings.Index(content, closeMarker)
 	if startIdx == -1 || endIdx == -1 {
 		return nil
 	}
 
-	endIdx += len("# --- /readme-merge ---")
+	endIdx += len(closeMarker)
 	if endIdx < len(content) && content[endIdx] == '\n' {
 		endIdx++
 	}

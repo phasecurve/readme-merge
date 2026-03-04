@@ -31,8 +31,7 @@ func main() {
 	case "hook":
 		runHook(os.Args[2:])
 	case "version":
-		// TODO: implement version output
-		fmt.Println("readme-merge", version, commit, date)
+		fmt.Printf("readme-merge %s (%s, built %s)\n", version, commit, date)
 	default:
 		usage()
 		os.Exit(1)
@@ -66,7 +65,11 @@ func runUpdate(args []string) {
 	readme := fs.String("file", "", "path to README (default: auto-detect)")
 	fs.Parse(args)
 
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	if err := source.ValidateSource(*sourceRef, dir); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -99,7 +102,11 @@ func runCheck(args []string) {
 	readme := fs.String("file", "", "path to README (default: auto-detect)")
 	fs.Parse(args)
 
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	if err := source.ValidateSource(*sourceRef, dir); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -156,7 +163,11 @@ func runHook(args []string) {
 		os.Exit(1)
 	}
 
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 
 	switch args[0] {
 	case "install":
