@@ -40,6 +40,34 @@ GitHub renders HTML comments as invisible — readers see only the code fence.
 
 ## Installation
 
+### Linux / macOS
+
+```
+curl -fsSL https://raw.githubusercontent.com/phasecurve/readme-merge/main/install.sh | sh
+```
+
+Installs to `~/.local/bin` on Linux, `/usr/local/bin` on macOS. Override with `INSTALL_DIR`:
+
+```
+curl -fsSL https://raw.githubusercontent.com/phasecurve/readme-merge/main/install.sh | INSTALL_DIR=./bin sh
+```
+
+For private repo access, set `GITHUB_TOKEN`:
+
+```
+curl -fsSL -H "Authorization: token $GITHUB_TOKEN" \
+  https://raw.githubusercontent.com/phasecurve/readme-merge/main/install.sh | sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/phasecurve/readme-merge/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\readme-merge` and offers to add it to your user PATH.
+Override with `$env:INSTALL_DIR`. For private repo access, set `$env:GITHUB_TOKEN`.
+
 ### From source
 
 ```
@@ -100,11 +128,12 @@ placeholder.
 Verify that all placeholders are fresh:
 
 ```
-readme-merge check [--source=<ref>] [--file=<path>]
+readme-merge check [--source=<ref>] [--file=<path>] [--heal]
 ```
 
 Exits 0 if everything is up to date. Exits 1 if any placeholder is stale or has
-never been populated. Designed for use in CI or as a pre-commit hook.
+never been populated. By default, `check` is read-only and does not modify the
+README. Pass `--heal` to write updated line references when snippets have shifted.
 
 Output examples:
 
@@ -115,6 +144,14 @@ $ readme-merge check
 $ readme-merge check
 1 stale placeholder(s):
   src/client.go lines 10-15: content changed
+1 placeholder(s) fresh
+
+$ readme-merge check
+1 placeholder(s) have shifted lines (run with --heal to update)
+1 placeholder(s) fresh
+
+$ readme-merge check --heal
+self-healed 1 placeholder(s) (lines shifted)
 1 placeholder(s) fresh
 ```
 
@@ -127,9 +164,10 @@ readme-merge hook install
 readme-merge hook uninstall
 ```
 
-The hook runs `readme-merge check --source=staged` before each commit. If any
-snippet is stale or unhashed, the commit is blocked with output showing which
-placeholders need attention.
+The hook runs `readme-merge check --source=staged --heal` before each commit.
+Self-healing is enabled so that shifted line references are fixed automatically
+as part of the commit. If any snippet is genuinely stale or unhashed, the commit
+is blocked with output showing which placeholders need attention.
 
 The hook is added as a clearly marked section in `.git/hooks/pre-commit`. If a
 pre-commit hook already exists, readme-merge appends to it rather than
@@ -175,19 +213,29 @@ has changed.
 
 ### Self-Healing
 
-When code moves — lines inserted or deleted above the referenced block — the
-line numbers in the placeholder become wrong. Rather than immediately reporting
+When code moves (lines inserted or deleted above the referenced block) the line
+numbers in the placeholder become wrong. Rather than immediately reporting
 staleness, readme-merge scans the entire source file for a contiguous block whose
 hash matches the stored snippet hash.
 
-If found, it silently updates the line reference in the README. No developer
-intervention needed for the common case of code shifting position.
+By default, `check` reports shifted placeholders without modifying the README:
 
 ```
 $ readme-merge check
+1 placeholder(s) have shifted lines (run with --heal to update)
+2 placeholder(s) fresh
+```
+
+With `--heal`, the line references are updated in place:
+
+```
+$ readme-merge check --heal
 self-healed 1 placeholder(s) (lines shifted)
 2 placeholder(s) fresh
 ```
+
+The pre-commit hook passes `--heal` automatically, so shifted references are
+fixed as part of the commit with no developer intervention.
 
 Self-healing only fires when the snippet content is identical but has moved. If
 the content itself changed, the placeholder is reported as stale and the
@@ -212,8 +260,8 @@ readme-merge hook install
 When you edit source code that is referenced by the README, the pre-commit hook
 catches it:
 
-- If code moved but content is the same: self-heals automatically, commit
-  proceeds.
+- If code moved but content is the same: the hook self-heals the line
+  references automatically, commit proceeds.
 - If code content changed: commit is blocked. Run `readme-merge update`, review
   the diff, then commit again.
 

@@ -9,7 +9,7 @@ import (
 
 const openMarker = "# --- readme-merge ---"
 const closeMarker = "# --- /readme-merge ---"
-const hookBlock = openMarker + "\nreadme-merge check --source=staged\n" + closeMarker
+const hookBlock = openMarker + "\nreadme-merge check --source=staged --heal\n" + closeMarker
 
 func Install(repoDir string) error {
 	hookPath := filepath.Join(repoDir, ".git", "hooks", "pre-commit")

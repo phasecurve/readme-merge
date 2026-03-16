@@ -24,7 +24,7 @@ func TestInstallNewHook(t *testing.T) {
 		t.Fatalf("hook file not created: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "readme-merge check --source=staged") {
+	if !strings.Contains(content, "readme-merge check --source=staged --heal") {
 		t.Errorf("hook missing readme-merge command:\n%s", content)
 	}
 }

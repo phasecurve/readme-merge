@@ -14,8 +14,7 @@ func FindSnippet(fileContent string, snippetHash string, lineCount int) (startLi
 	}
 
 	for i := 0; i <= len(lines)-lineCount; i++ {
-		candidate := strings.Join(lines[i:i+lineCount], "\n") + "\n"
-		if hasher.ContentHash(candidate) == snippetHash {
+		if hasher.SnippetHash(lines[i:i+lineCount]) == snippetHash {
 			return i + 1, i + lineCount, true
 		}
 	}

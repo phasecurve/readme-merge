@@ -2,14 +2,16 @@ package engine
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/phasecurve/readme-merge/internal/hasher"
 	"github.com/phasecurve/readme-merge/internal/parser"
 	"github.com/phasecurve/readme-merge/internal/scanner"
-	"github.com/phasecurve/readme-merge/internal/source"
 )
+
+type FileReader interface {
+	ReadFile(path string) (string, error)
+}
 
 type UpdateResult struct {
 	Output  string
@@ -18,6 +20,7 @@ type UpdateResult struct {
 }
 
 type CheckResult struct {
+	Output   string
 	Stale    []StaleBlock
 	Unhashed []parser.Block
 	Healed   int
@@ -29,13 +32,7 @@ type StaleBlock struct {
 	Message string
 }
 
-func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error) {
-	data, err := os.ReadFile(readmePath)
-	if err != nil {
-		return nil, fmt.Errorf("reading README: %w", err)
-	}
-
-	content := string(data)
+func Update(content string, reader FileReader) (*UpdateResult, error) {
 	blocks, err := parser.Parse(content)
 	if err != nil {
 		return nil, fmt.Errorf("parsing README: %w", err)
@@ -46,7 +43,7 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 	for i := range blocks {
 		b := &blocks[i]
 
-		fileContent, err := resolver.ReadFile(b.From)
+		fileContent, err := reader.ReadFile(b.From)
 		if err != nil {
 			return nil, fmt.Errorf("block %s: %w", b.From, err)
 		}
@@ -54,13 +51,12 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 		lines := strings.Split(fileContent, "\n")
 
 		if b.SnippetHash != "" {
-			lineCount := b.LineEnd - b.LineStart + 1
+			lineCount := b.SourceEnd - b.SourceStart + 1
 
-			if b.LineEnd <= len(lines) {
-				selected := lines[b.LineStart-1 : b.LineEnd]
-				candidate := strings.Join(selected, "\n") + "\n"
-				if hasher.ContentHash(candidate) == b.SnippetHash {
-					b.Content = candidate
+			if b.SourceEnd <= len(lines) {
+				selected := lines[b.SourceStart-1 : b.SourceEnd]
+				if hasher.SnippetHash(selected) == b.SnippetHash {
+					b.Content = strings.Join(selected, "\n") + "\n"
 					b.FileHash = hasher.ContentHash(fileContent)
 					result.Updated++
 					continue
@@ -70,10 +66,9 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 			start, end, found := scanner.FindSnippet(fileContent, b.SnippetHash, lineCount)
 			if found {
 				selected := lines[start-1 : end]
-				snippet := strings.Join(selected, "\n") + "\n"
-				b.LineStart = start
-				b.LineEnd = end
-				b.Content = snippet
+				b.SourceStart = start
+				b.SourceEnd = end
+				b.Content = strings.Join(selected, "\n") + "\n"
 				b.FileHash = hasher.ContentHash(fileContent)
 				result.Healed++
 				result.Updated++
@@ -81,41 +76,31 @@ func Update(readmePath string, resolver *source.Resolver) (*UpdateResult, error)
 			}
 		}
 
-		if b.LineEnd > len(lines) || b.LineStart < 1 {
+		if b.SourceEnd > len(lines) || b.SourceStart < 1 {
 			return nil, fmt.Errorf("block %s: line range %d-%d out of bounds (%d lines)",
-				b.From, b.LineStart, b.LineEnd, len(lines))
+				b.From, b.SourceStart, b.SourceEnd, len(lines))
 		}
 
-		selected := lines[b.LineStart-1 : b.LineEnd]
-		snippet := strings.Join(selected, "\n") + "\n"
+		selected := lines[b.SourceStart-1 : b.SourceEnd]
 
-		b.Content = snippet
+		b.Content = strings.Join(selected, "\n") + "\n"
 		b.FileHash = hasher.ContentHash(fileContent)
-		b.SnippetHash = hasher.ContentHash(snippet)
+		b.SnippetHash = hasher.SnippetHash(selected)
 		result.Updated++
 	}
 
 	result.Output = parser.Render(content, blocks)
-	if err := os.WriteFile(readmePath, []byte(result.Output), 0644); err != nil {
-		return nil, fmt.Errorf("writing README: %w", err)
-	}
 	return result, nil
 }
 
-func Check(readmePath string, resolver *source.Resolver) (*CheckResult, error) {
-	data, err := os.ReadFile(readmePath)
-	if err != nil {
-		return nil, fmt.Errorf("reading README: %w", err)
-	}
-
-	content := string(data)
+func Check(content string, reader FileReader) (*CheckResult, error) {
 	blocks, err := parser.Parse(content)
 	if err != nil {
 		return nil, fmt.Errorf("parsing README: %w", err)
 	}
 
 	result := &CheckResult{}
-	needsWrite := false
+	needsRender := false
 
 	for i := range blocks {
 		b := &blocks[i]
@@ -125,7 +110,7 @@ func Check(readmePath string, resolver *source.Resolver) (*CheckResult, error) {
 			continue
 		}
 
-		fileContent, err := resolver.ReadFile(b.From)
+		fileContent, err := reader.ReadFile(b.From)
 		if err != nil {
 			return nil, fmt.Errorf("block %s: %w", b.From, err)
 		}
@@ -137,40 +122,36 @@ func Check(readmePath string, resolver *source.Resolver) (*CheckResult, error) {
 		}
 
 		lines := strings.Split(fileContent, "\n")
-		lineCount := b.LineEnd - b.LineStart + 1
+		lineCount := b.SourceEnd - b.SourceStart + 1
 
-		if b.LineEnd <= len(lines) {
-			selected := lines[b.LineStart-1 : b.LineEnd]
-			candidate := strings.Join(selected, "\n") + "\n"
-			if hasher.ContentHash(candidate) == b.SnippetHash {
+		if b.SourceEnd <= len(lines) {
+			selected := lines[b.SourceStart-1 : b.SourceEnd]
+			if hasher.SnippetHash(selected) == b.SnippetHash {
 				b.FileHash = currentFileHash
 				result.Fresh++
-				needsWrite = true
+				needsRender = true
 				continue
 			}
 		}
 
 		start, end, found := scanner.FindSnippet(fileContent, b.SnippetHash, lineCount)
 		if found {
-			b.LineStart = start
-			b.LineEnd = end
+			b.SourceStart = start
+			b.SourceEnd = end
 			b.FileHash = currentFileHash
 			result.Healed++
-			needsWrite = true
+			needsRender = true
 			continue
 		}
 
 		result.Stale = append(result.Stale, StaleBlock{
 			Block:   *b,
-			Message: fmt.Sprintf("%s lines %d-%d: content changed", b.From, b.LineStart, b.LineEnd),
+			Message: fmt.Sprintf("%s lines %d-%d: content changed", b.From, b.SourceStart, b.SourceEnd),
 		})
 	}
 
-	if needsWrite {
-		output := parser.Render(content, blocks)
-		if err := os.WriteFile(readmePath, []byte(output), 0644); err != nil {
-			return nil, fmt.Errorf("writing README: %w", err)
-		}
+	if needsRender {
+		result.Output = parser.Render(content, blocks)
 	}
 
 	return result, nil

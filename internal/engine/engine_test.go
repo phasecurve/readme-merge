@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,104 +11,25 @@ import (
 	"github.com/phasecurve/readme-merge/internal/source"
 )
 
-func TestUpdateReturnsWriteError(t *testing.T) {
-	dir := setupProject(t, map[string]string{
-		"src/main.go": "package main\n\nfunc hello() {\n\treturn\n}\n",
-		"README.md":   "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n",
-	})
-
-	os.Chmod(filepath.Join(dir, "README.md"), 0444)
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "README.md"), 0644) })
-
-	r := source.NewResolver("", dir)
-	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
-	if err == nil {
-		t.Fatal("expected error when README is read-only")
-	}
-	if !strings.Contains(err.Error(), "writing README") {
-		t.Errorf("expected 'writing README' error, got: %v", err)
-	}
+type stubReader struct {
+	files map[string]string
 }
 
-func TestCheckReturnsWriteErrorOnSelfHeal(t *testing.T) {
-	dir := setupProject(t, map[string]string{
-		"src/main.go": "line1\nline2\ntarget\nline4\n",
-		"README.md":   "<!-- code from=src/main.go lines=3-3 -->\n<!-- /code -->\n",
-	})
-
-	r := source.NewResolver("", dir)
-	engine.Update(filepath.Join(dir, "README.md"), r)
-
-	os.WriteFile(filepath.Join(dir, "src/main.go"),
-		[]byte("new top\nline1\nline2\ntarget\nline4\n"), 0644)
-
-	os.Chmod(filepath.Join(dir, "README.md"), 0444)
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "README.md"), 0644) })
-
-	_, err := engine.Check(filepath.Join(dir, "README.md"), r)
-	if err == nil {
-		t.Fatal("expected error when self-heal can't write")
+func (s *stubReader) ReadFile(path string) (string, error) {
+	content, ok := s.files[path]
+	if !ok {
+		return "", fmt.Errorf("file not found: %s", path)
 	}
-	if !strings.Contains(err.Error(), "writing README") {
-		t.Errorf("expected 'writing README' error, got: %v", err)
-	}
-}
-
-func TestUpdateRejectsPathTraversal(t *testing.T) {
-	parent := t.TempDir()
-	os.WriteFile(filepath.Join(parent, "secret.txt"), []byte("leaked\n"), 0644)
-
-	dir := filepath.Join(parent, "proj")
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte(
-		"<!-- code from=../secret.txt lines=1-1 -->\n<!-- /code -->\n",
-	), 0644)
-
-	r := source.NewResolver("", dir)
-	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
-	if err == nil {
-		t.Fatal("expected error for path traversal through engine")
-	}
-	if !strings.Contains(err.Error(), "escapes project directory") {
-		t.Errorf("expected path escape error, got: %v", err)
-	}
-}
-
-func TestUpdateRejectsOutOfBoundsLines(t *testing.T) {
-	dir := setupProject(t, map[string]string{
-		"src/main.go": "line1\nline2\n",
-		"README.md":   "<!-- code from=src/main.go lines=1-99 -->\n<!-- /code -->\n",
-	})
-
-	r := source.NewResolver("", dir)
-	_, err := engine.Update(filepath.Join(dir, "README.md"), r)
-	if err == nil {
-		t.Fatal("expected error for out-of-bounds line range")
-	}
-	if !strings.Contains(err.Error(), "out of bounds") {
-		t.Errorf("expected 'out of bounds' error, got: %v", err)
-	}
-}
-
-func setupProject(t *testing.T, files map[string]string) string {
-	t.Helper()
-	dir := t.TempDir()
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		os.MkdirAll(filepath.Dir(path), 0755)
-		os.WriteFile(path, []byte(content), 0644)
-	}
-	return dir
+	return content, nil
 }
 
 func TestUpdateNewPlaceholder(t *testing.T) {
-	dir := setupProject(t, map[string]string{
+	reader := &stubReader{files: map[string]string{
 		"src/main.go": "package main\n\nfunc hello() {\n\treturn\n}\n",
-		"README.md":   "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n",
-	})
+	}}
+	content := "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n"
 
-	r := source.NewResolver("", dir)
-	result, err := engine.Update(filepath.Join(dir, "README.md"), r)
+	result, err := engine.Update(content, reader)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,19 +45,54 @@ func TestUpdateNewPlaceholder(t *testing.T) {
 	}
 }
 
+func TestUpdateRejectsOutOfBoundsLines(t *testing.T) {
+	reader := &stubReader{files: map[string]string{
+		"src/main.go": "line1\nline2\n",
+	}}
+	content := "<!-- code from=src/main.go lines=1-99 -->\n<!-- /code -->\n"
+
+	_, err := engine.Update(content, reader)
+	if err == nil {
+		t.Fatal("expected error for out-of-bounds line range")
+	}
+	if !strings.Contains(err.Error(), "out of bounds") {
+		t.Errorf("expected 'out of bounds' error, got: %v", err)
+	}
+}
+
+func TestUpdateRejectsPathTraversal(t *testing.T) {
+	parent := t.TempDir()
+	os.WriteFile(filepath.Join(parent, "secret.txt"), []byte("leaked\n"), 0644)
+
+	dir := filepath.Join(parent, "proj")
+	os.MkdirAll(dir, 0755)
+
+	resolver := source.NewResolver("", dir)
+	content := "<!-- code from=../secret.txt lines=1-1 -->\n<!-- /code -->\n"
+
+	_, err := engine.Update(content, resolver)
+	if err == nil {
+		t.Fatal("expected error for path traversal through engine")
+	}
+	if !strings.Contains(err.Error(), "escapes project directory") {
+		t.Errorf("expected path escape error, got: %v", err)
+	}
+}
+
 func TestCheckStaleSnippet(t *testing.T) {
-	dir := setupProject(t, map[string]string{
+	reader := &stubReader{files: map[string]string{
 		"src/main.go": "package main\n\nfunc hello() {\n\treturn\n}\n",
-		"README.md":   "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n",
-	})
+	}}
+	content := "# Proj\n\n<!-- code from=src/main.go lines=3-5 -->\n<!-- /code -->\n"
 
-	r := source.NewResolver("", dir)
-	engine.Update(filepath.Join(dir, "README.md"), r)
+	updated, err := engine.Update(content, reader)
+	if err != nil {
+		t.Fatalf("update error: %v", err)
+	}
 
-	os.WriteFile(filepath.Join(dir, "src/main.go"),
-		[]byte("package main\n\nfunc goodbye() {\n\treturn\n}\n"), 0644)
+	reader.files["src/main.go"] = "package main\n\nfunc goodbye() {\n\treturn\n}\n"
 
-	result, err := engine.Check(filepath.Join(dir, "README.md"), r)
+	result, err := engine.Check(updated.Output, reader)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,18 +102,19 @@ func TestCheckStaleSnippet(t *testing.T) {
 }
 
 func TestCheckSelfHealing(t *testing.T) {
-	dir := setupProject(t, map[string]string{
+	reader := &stubReader{files: map[string]string{
 		"src/main.go": "line1\nline2\ntarget\nline4\n",
-		"README.md":   "<!-- code from=src/main.go lines=3-3 -->\n<!-- /code -->\n",
-	})
+	}}
+	content := "<!-- code from=src/main.go lines=3-3 -->\n<!-- /code -->\n"
 
-	r := source.NewResolver("", dir)
-	engine.Update(filepath.Join(dir, "README.md"), r)
+	updated, err := engine.Update(content, reader)
+	if err != nil {
+		t.Fatalf("update error: %v", err)
+	}
 
-	os.WriteFile(filepath.Join(dir, "src/main.go"),
-		[]byte("new top\nline1\nline2\ntarget\nline4\n"), 0644)
+	reader.files["src/main.go"] = "new top\nline1\nline2\ntarget\nline4\n"
 
-	result, err := engine.Check(filepath.Join(dir, "README.md"), r)
+	result, err := engine.Check(updated.Output, reader)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,9 +124,27 @@ func TestCheckSelfHealing(t *testing.T) {
 	if len(result.Stale) != 0 {
 		t.Errorf("expected no stale blocks after heal")
 	}
+	if !strings.Contains(result.Output, "lines=4-4") {
+		t.Errorf("expected healed line reference, got:\n%s", result.Output)
+	}
+}
 
-	data, _ := os.ReadFile(filepath.Join(dir, "README.md"))
-	if !strings.Contains(string(data), "lines=4-4") {
-		t.Errorf("expected healed line reference, got:\n%s", string(data))
+func TestCheckHealOutputIsEmpty(t *testing.T) {
+	reader := &stubReader{files: map[string]string{
+		"src/main.go": "line1\nline2\ntarget\nline4\n",
+	}}
+	content := "<!-- code from=src/main.go lines=3-3 -->\n<!-- /code -->\n"
+
+	updated, err := engine.Update(content, reader)
+	if err != nil {
+		t.Fatalf("update error: %v", err)
+	}
+
+	result, err := engine.Check(updated.Output, reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Output != "" {
+		t.Errorf("expected empty Output when no changes needed, got:\n%s", result.Output)
 	}
 }

@@ -49,6 +49,14 @@ func runCheck(t *testing.T, binPath, dir string) (string, error) {
 	return string(out), err
 }
 
+func runCheckWithHeal(t *testing.T, binPath, dir string) (string, error) {
+	t.Helper()
+	cmd := exec.Command(binPath, "check", "--heal")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 func TestEndToEnd(t *testing.T) {
 	binPath := buildBinary(t)
 	dir := testdataDir("basic")
@@ -107,9 +115,9 @@ func TestHealAddSingle(t *testing.T) {
 		"package example\n\nvar line1 = \"line1\"\n\n// new comment\nfunc Target() string {\n\treturn \"target code\"\n}\n\nvar line3 = \"line3\"\n",
 	), 0644)
 
-	out, err := runCheck(t, binPath, dir)
+	out, err := runCheckWithHeal(t, binPath, dir)
 	if err != nil {
-		t.Fatalf("check should pass after self-heal: %s", out)
+		t.Fatalf("check --heal should pass after self-heal: %s", out)
 	}
 	if !strings.Contains(out, "self-healed") {
 		t.Errorf("expected self-heal message, got: %s", out)
@@ -165,9 +173,9 @@ func TestHealAddMultiple(t *testing.T) {
 		"package example\n\n// added one\n// added two\n// added three\nfunc Hello() {\n\tfmt.Println(\"hello world\")\n}\n",
 	), 0644)
 
-	out, err := runCheck(t, binPath, dir)
+	out, err := runCheckWithHeal(t, binPath, dir)
 	if err != nil {
-		t.Fatalf("check should pass after self-heal: %s", out)
+		t.Fatalf("check --heal should pass after self-heal: %s", out)
 	}
 	if !strings.Contains(out, "self-healed") {
 		t.Errorf("expected self-heal message, got: %s", out)
@@ -193,9 +201,9 @@ func TestHealRemoveSingle(t *testing.T) {
 		"package example\n\nfunc Hello() {\n\tfmt.Println(\"hello world\")\n}\n",
 	), 0644)
 
-	out, err := runCheck(t, binPath, dir)
+	out, err := runCheckWithHeal(t, binPath, dir)
 	if err != nil {
-		t.Fatalf("check should pass after self-heal: %s", out)
+		t.Fatalf("check --heal should pass after self-heal: %s", out)
 	}
 	if !strings.Contains(out, "self-healed") {
 		t.Errorf("expected self-heal message, got: %s", out)
@@ -221,9 +229,9 @@ func TestHealRemoveMultiple(t *testing.T) {
 		"package example\n\nfunc Hello() {\n\tfmt.Println(\"hello world\")\n}\n",
 	), 0644)
 
-	out, err := runCheck(t, binPath, dir)
+	out, err := runCheckWithHeal(t, binPath, dir)
 	if err != nil {
-		t.Fatalf("check should pass after self-heal: %s", out)
+		t.Fatalf("check --heal should pass after self-heal: %s", out)
 	}
 	if !strings.Contains(out, "self-healed") {
 		t.Errorf("expected self-heal message, got: %s", out)

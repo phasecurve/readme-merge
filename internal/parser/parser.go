@@ -7,23 +7,15 @@ import (
 	"strings"
 )
 
-func mustAtoi(s string) int {
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		panic("mustAtoi: " + err.Error())
-	}
-	return n
-}
-
 type Block struct {
 	From        string
-	LineStart   int
-	LineEnd     int
+	SourceStart   int
+	SourceEnd     int
 	FileHash    string
 	SnippetHash string
 	Content     string
-	StartLine   int
-	EndLine     int
+	ReadmeStart   int
+	ReadmeEnd     int
 }
 
 var openRe = regexp.MustCompile(
@@ -44,16 +36,22 @@ func Parse(input string) ([]Block, error) {
 			continue
 		}
 
-		lineStart := mustAtoi(m[2])
-		lineEnd := mustAtoi(m[3])
+		lineStart, err := strconv.Atoi(m[2])
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid start line %q: %w", i+1, m[2], err)
+		}
+		lineEnd, err := strconv.Atoi(m[3])
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid end line %q: %w", i+1, m[3], err)
+		}
 
 		b := Block{
 			From:        m[1],
-			LineStart:   lineStart,
-			LineEnd:     lineEnd,
+			SourceStart:   lineStart,
+			SourceEnd:     lineEnd,
 			FileHash:    m[4],
 			SnippetHash: m[5],
-			StartLine:   i,
+			ReadmeStart:   i,
 		}
 
 		closeIdx := -1
@@ -67,7 +65,7 @@ func Parse(input string) ([]Block, error) {
 			return nil, fmt.Errorf("line %d: unclosed <!-- code --> block", i+1)
 		}
 
-		b.EndLine = closeIdx
+		b.ReadmeEnd = closeIdx
 
 		contentLines := lines[i+1 : closeIdx]
 		if len(contentLines) > 0 {
@@ -91,20 +89,21 @@ func Parse(input string) ([]Block, error) {
 	return blocks, nil
 }
 
+var extToLang = map[string]string{
+	"go": "go", "py": "python", "js": "javascript", "ts": "typescript",
+	"rs": "rust", "rb": "ruby", "java": "java", "sh": "bash",
+	"bash": "bash", "zsh": "bash", "c": "c", "cpp": "cpp", "h": "c",
+	"yaml": "yaml", "yml": "yaml", "json": "json", "toml": "toml",
+	"sql": "sql", "html": "html", "css": "css", "md": "markdown",
+}
+
 func langFromPath(path string) string {
 	idx := strings.LastIndex(path, ".")
 	if idx == -1 {
 		return ""
 	}
 	ext := path[idx+1:]
-	langs := map[string]string{
-		"go": "go", "py": "python", "js": "javascript", "ts": "typescript",
-		"rs": "rust", "rb": "ruby", "java": "java", "sh": "bash",
-		"bash": "bash", "zsh": "bash", "c": "c", "cpp": "cpp", "h": "c",
-		"yaml": "yaml", "yml": "yaml", "json": "json", "toml": "toml",
-		"sql": "sql", "html": "html", "css": "css", "md": "markdown",
-	}
-	if l, ok := langs[ext]; ok {
+	if l, ok := extToLang[ext]; ok {
 		return l
 	}
 	return ext
@@ -116,10 +115,10 @@ func Render(original string, blocks []Block) string {
 	prevEnd := 0
 
 	for _, b := range blocks {
-		result = append(result, lines[prevEnd:b.StartLine]...)
+		result = append(result, lines[prevEnd:b.ReadmeStart]...)
 
 		header := fmt.Sprintf("<!-- code from=%s lines=%d-%d",
-			b.From, b.LineStart, b.LineEnd)
+			b.From, b.SourceStart, b.SourceEnd)
 		if b.FileHash != "" {
 			header += " filehash=" + b.FileHash
 		}
@@ -136,7 +135,7 @@ func Render(original string, blocks []Block) string {
 		result = append(result, "```")
 		result = append(result, "<!-- /code -->")
 
-		prevEnd = b.EndLine + 1
+		prevEnd = b.ReadmeEnd + 1
 	}
 
 	if prevEnd < len(lines) {

@@ -17,6 +17,35 @@ var (
 	date    = "unknown"
 )
 
+type commandConfig struct {
+	readmePath string
+	resolver   *source.Resolver
+}
+
+func resolveConfig(sourceRef, readme string) *commandConfig {
+	dir, err := os.Getwd()
+	if err != nil {
+		fatal(err)
+	}
+
+	if err := source.ValidateSource(sourceRef, dir); err != nil {
+		fatal(err)
+	}
+
+	readmePath := readme
+	if readmePath == "" {
+		readmePath, err = findReadme(dir)
+		if err != nil {
+			fatal(err)
+		}
+	}
+
+	return &commandConfig{
+		readmePath: readmePath,
+		resolver:   source.NewResolver(sourceRef, dir),
+	}
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -65,32 +94,20 @@ func runUpdate(args []string) {
 	readme := fs.String("file", "", "path to README (default: auto-detect)")
 	fs.Parse(args)
 
-	dir, err := os.Getwd()
+	cfg := resolveConfig(*sourceRef, *readme)
+
+	content, err := os.ReadFile(cfg.readmePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(fmt.Errorf("reading README: %w", err))
 	}
 
-	if err := source.ValidateSource(*sourceRef, dir); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-
-	readmePath := *readme
-	if readmePath == "" {
-		var err error
-		readmePath, err = findReadme(dir)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-	}
-
-	resolver := source.NewResolver(*sourceRef, dir)
-	result, err := engine.Update(readmePath, resolver)
+	result, err := engine.Update(string(content), cfg.resolver)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
+	}
+
+	if err := os.WriteFile(cfg.readmePath, []byte(result.Output), 0644); err != nil {
+		fatal(fmt.Errorf("writing README: %w", err))
 	}
 
 	fmt.Printf("updated %d placeholder(s)\n", result.Updated)
@@ -100,34 +117,19 @@ func runCheck(args []string) {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	sourceRef := fs.String("source", "", "source ref: staged, HEAD, or git ref (default: worktree)")
 	readme := fs.String("file", "", "path to README (default: auto-detect)")
+	heal := fs.Bool("heal", false, "write healed line references back to README")
 	fs.Parse(args)
 
-	dir, err := os.Getwd()
+	cfg := resolveConfig(*sourceRef, *readme)
+
+	content, err := os.ReadFile(cfg.readmePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(fmt.Errorf("reading README: %w", err))
 	}
 
-	if err := source.ValidateSource(*sourceRef, dir); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-
-	readmePath := *readme
-	if readmePath == "" {
-		var err error
-		readmePath, err = findReadme(dir)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-	}
-
-	resolver := source.NewResolver(*sourceRef, dir)
-	result, err := engine.Check(readmePath, resolver)
+	result, err := engine.Check(string(content), cfg.resolver)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 
 	exitCode := 0
@@ -135,7 +137,7 @@ func runCheck(args []string) {
 	if len(result.Unhashed) > 0 {
 		fmt.Fprintf(os.Stderr, "%d unhashed placeholder(s) - run 'readme-merge update' first:\n", len(result.Unhashed))
 		for _, b := range result.Unhashed {
-			fmt.Fprintf(os.Stderr, "  %s lines %d-%d\n", b.From, b.LineStart, b.LineEnd)
+			fmt.Fprintf(os.Stderr, "  %s lines %d-%d\n", b.From, b.SourceStart, b.SourceEnd)
 		}
 		exitCode = 1
 	}
@@ -149,7 +151,17 @@ func runCheck(args []string) {
 	}
 
 	if result.Healed > 0 {
-		fmt.Printf("self-healed %d placeholder(s) (lines shifted)\n", result.Healed)
+		if *heal {
+			fmt.Printf("self-healed %d placeholder(s) (lines shifted)\n", result.Healed)
+		} else {
+			fmt.Printf("%d placeholder(s) have shifted lines (run with --heal to update)\n", result.Healed)
+		}
+	}
+
+	if *heal && result.Output != "" {
+		if err := os.WriteFile(cfg.readmePath, []byte(result.Output), 0644); err != nil {
+			fatal(fmt.Errorf("writing README: %w", err))
+		}
 	}
 
 	fmt.Printf("%d placeholder(s) fresh\n", result.Fresh)
@@ -165,25 +177,27 @@ func runHook(args []string) {
 
 	dir, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 
 	switch args[0] {
 	case "install":
 		if err := hook.Install(dir); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			fatal(err)
 		}
 		fmt.Println("pre-commit hook installed")
 	case "uninstall":
 		if err := hook.Uninstall(dir); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			fatal(err)
 		}
 		fmt.Println("pre-commit hook removed")
 	default:
 		fmt.Fprintln(os.Stderr, "usage: readme-merge hook <install|uninstall>")
 		os.Exit(1)
 	}
+}
+
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
 }

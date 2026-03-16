@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -68,8 +69,14 @@ func (r *Resolver) readGitRef(path string) (string, error) {
 	}
 
 	cmd := exec.Command("git", "-C", r.baseDir, "show", ref)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return "", fmt.Errorf("git show %s: %s", ref, msg)
+		}
 		return "", fmt.Errorf("git show %s: %w", ref, err)
 	}
 	return string(out), nil

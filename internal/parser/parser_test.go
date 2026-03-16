@@ -22,8 +22,8 @@ func TestParseNewPlaceholder(t *testing.T) {
 	if b.From != "examples/client.go" {
 		t.Errorf("From = %q, want %q", b.From, "examples/client.go")
 	}
-	if b.LineStart != 10 || b.LineEnd != 25 {
-		t.Errorf("Lines = %d-%d, want 10-25", b.LineStart, b.LineEnd)
+	if b.SourceStart != 10 || b.SourceEnd != 25 {
+		t.Errorf("Lines = %d-%d, want 10-25", b.SourceStart, b.SourceEnd)
 	}
 	if b.FileHash != "" || b.SnippetHash != "" {
 		t.Errorf("new placeholder should have empty hashes")
@@ -78,8 +78,8 @@ func TestRenderNewBlock(t *testing.T) {
 	blocks[0].Content = "fmt.Println(\"hello\")\n"
 	blocks[0].FileHash = "aaaa1234aaaa1234"
 	blocks[0].SnippetHash = "bbbb1234bbbb1234"
-	blocks[0].LineStart = 10
-	blocks[0].LineEnd = 12
+	blocks[0].SourceStart = 10
+	blocks[0].SourceEnd = 12
 
 	got := parser.Render(original, blocks)
 
