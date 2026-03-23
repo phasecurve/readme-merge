@@ -6,8 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"strings"
+
 	"github.com/phasecurve/readme-merge/internal/engine"
 	"github.com/phasecurve/readme-merge/internal/hook"
+	"github.com/phasecurve/readme-merge/internal/parser"
+	"github.com/phasecurve/readme-merge/internal/remote"
 	"github.com/phasecurve/readme-merge/internal/source"
 )
 
@@ -19,7 +23,7 @@ var (
 
 type commandConfig struct {
 	readmePath string
-	resolver   *source.Resolver
+	reader     engine.FileReader
 }
 
 func resolveConfig(sourceRef, readme string) *commandConfig {
@@ -40,9 +44,13 @@ func resolveConfig(sourceRef, readme string) *commandConfig {
 		}
 	}
 
+	localResolver := source.NewResolver(sourceRef, dir)
+	cacheDir := filepath.Join(dir, ".readme-merge", "cache")
+	reader := remote.NewCompositeReader(localResolver, cacheDir)
+
 	return &commandConfig{
 		readmePath: readmePath,
-		resolver:   source.NewResolver(sourceRef, dir),
+		reader:     reader,
 	}
 }
 
@@ -52,14 +60,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	switch os.Args[1] {
-	case "update":
+	arg := os.Args[1]
+	switch {
+	case arg == "update":
 		runUpdate(os.Args[2:])
-	case "check":
+	case arg == "check":
 		runCheck(os.Args[2:])
-	case "hook":
+	case arg == "hook":
 		runHook(os.Args[2:])
-	case "version":
+	case arg == "version" || arg == "--version" || arg == "-v":
 		fmt.Printf("readme-merge %s (%s, built %s)\n", version, commit, date)
 	default:
 		usage()
@@ -101,13 +110,17 @@ func runUpdate(args []string) {
 		fatal(fmt.Errorf("reading README: %w", err))
 	}
 
-	result, err := engine.Update(string(content), cfg.resolver)
+	result, err := engine.Update(string(content), cfg.reader)
 	if err != nil {
 		fatal(err)
 	}
 
 	if err := os.WriteFile(cfg.readmePath, []byte(result.Output), 0644); err != nil {
 		fatal(fmt.Errorf("writing README: %w", err))
+	}
+
+	for _, u := range result.Unreachable {
+		fmt.Fprintf(os.Stderr, "warning: %s (skipped, existing content preserved)\n", u.Message)
 	}
 
 	fmt.Printf("updated %d placeholder(s)\n", result.Updated)
@@ -118,6 +131,7 @@ func runCheck(args []string) {
 	sourceRef := fs.String("source", "", "source ref: staged, HEAD, or git ref (default: worktree)")
 	readme := fs.String("file", "", "path to README (default: auto-detect)")
 	heal := fs.Bool("heal", false, "write healed line references back to README")
+	full := fs.Bool("full", false, "show full content of each placeholder")
 	fs.Parse(args)
 
 	cfg := resolveConfig(*sourceRef, *readme)
@@ -127,17 +141,25 @@ func runCheck(args []string) {
 		fatal(fmt.Errorf("reading README: %w", err))
 	}
 
-	result, err := engine.Check(string(content), cfg.resolver)
+	result, err := engine.Check(string(content), cfg.reader)
 	if err != nil {
 		fatal(err)
 	}
 
 	exitCode := 0
 
+	if len(result.Unreachable) > 0 {
+		fmt.Fprintf(os.Stderr, "%d placeholder(s) reference unreachable refs (branch deleted or renamed?):\n", len(result.Unreachable))
+		for _, u := range result.Unreachable {
+			fmt.Fprintf(os.Stderr, "  %s ref=%s lines %d-%d\n", u.Block.From, u.Block.Ref, u.Block.SourceStart, u.Block.SourceEnd)
+			fmt.Fprintf(os.Stderr, "    %s\n", u.Message)
+		}
+	}
+
 	if len(result.Unhashed) > 0 {
 		fmt.Fprintf(os.Stderr, "%d unhashed placeholder(s) - run 'readme-merge update' first:\n", len(result.Unhashed))
 		for _, b := range result.Unhashed {
-			fmt.Fprintf(os.Stderr, "  %s lines %d-%d\n", b.From, b.SourceStart, b.SourceEnd)
+			printBlock(b, *full)
 		}
 		exitCode = 1
 	}
@@ -145,7 +167,7 @@ func runCheck(args []string) {
 	if len(result.Stale) > 0 {
 		fmt.Fprintf(os.Stderr, "%d stale placeholder(s):\n", len(result.Stale))
 		for _, s := range result.Stale {
-			fmt.Fprintf(os.Stderr, "  %s\n", s.Message)
+			printBlock(s.Block, *full)
 		}
 		exitCode = 1
 	}
@@ -164,7 +186,14 @@ func runCheck(args []string) {
 		}
 	}
 
-	fmt.Printf("%d placeholder(s) fresh\n", result.Fresh)
+	if len(result.FreshBlocks) > 0 {
+		fmt.Printf("%d placeholder(s) fresh:\n", result.Fresh)
+		for _, b := range result.FreshBlocks {
+			printBlock(b, *full)
+		}
+	} else {
+		fmt.Printf("%d placeholder(s) fresh\n", result.Fresh)
+	}
 
 	os.Exit(exitCode)
 }
@@ -194,6 +223,35 @@ func runHook(args []string) {
 	default:
 		fmt.Fprintln(os.Stderr, "usage: readme-merge hook <install|uninstall>")
 		os.Exit(1)
+	}
+}
+
+func printBlock(b parser.Block, full bool) {
+	label := b.From
+	if b.Ref != "" {
+		label += " ref=" + b.Ref
+	}
+	label += fmt.Sprintf(" lines %d-%d", b.SourceStart, b.SourceEnd)
+	fmt.Printf("  %s\n", label)
+
+	content := strings.TrimRight(b.Content, "\n")
+	lines := strings.Split(content, "\n")
+
+	if full {
+		for _, l := range lines {
+			fmt.Printf("    %s\n", l)
+		}
+	} else {
+		limit := 3
+		if len(lines) < limit {
+			limit = len(lines)
+		}
+		for _, l := range lines[:limit] {
+			fmt.Printf("    %s\n", l)
+		}
+		if len(lines) > 3 {
+			fmt.Printf("    ... (%d more lines)\n", len(lines)-3)
+		}
 	}
 }
 
