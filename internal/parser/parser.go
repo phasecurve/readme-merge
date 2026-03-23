@@ -318,19 +318,23 @@ func Render(original string, blocks []Block) string {
 func renderCodeBlock(b Block) []string {
 	var out []string
 
-	header := fmt.Sprintf("<!-- code from=%s", b.From)
+	var hdr strings.Builder
+	fmt.Fprintf(&hdr, "<!-- code from=%s", b.From)
 	if b.Ref != "" {
-		header += " ref=" + b.Ref
+		hdr.WriteString(" ref=")
+		hdr.WriteString(b.Ref)
 	}
-	header += fmt.Sprintf(" lines=%d-%d", b.SourceStart, b.SourceEnd)
+	fmt.Fprintf(&hdr, " lines=%d-%d", b.SourceStart, b.SourceEnd)
 	if b.FileHash != "" {
-		header += " filehash=" + b.FileHash
+		hdr.WriteString(" filehash=")
+		hdr.WriteString(b.FileHash)
 	}
 	if b.SnippetHash != "" {
-		header += " snippethash=" + b.SnippetHash
+		hdr.WriteString(" snippethash=")
+		hdr.WriteString(b.SnippetHash)
 	}
-	header += " -->"
-	out = append(out, header)
+	hdr.WriteString(" -->")
+	out = append(out, hdr.String())
 
 	lang := langFromPath(b.From)
 	content := rewriteAnchorLinks(b.Content, b.From, b.Ref)
@@ -350,18 +354,20 @@ func renderIsland(blocks []Block, startIdx int) []string {
 
 	file, repo := splitIslandFrom(first.From)
 
-	header := fmt.Sprintf("<!-- island file=%q", file)
+	var hdr strings.Builder
+	fmt.Fprintf(&hdr, "<!-- island file=%q", file)
 	if repo != "" {
-		header += fmt.Sprintf(" repo=%q", repo)
+		fmt.Fprintf(&hdr, " repo=%q", repo)
 	}
 	if first.Ref != "" {
-		header += fmt.Sprintf(" ref=%q", first.Ref)
+		fmt.Fprintf(&hdr, " ref=%q", first.Ref)
 	}
 	if first.FileHash != "" {
-		header += " filehash=" + first.FileHash
+		hdr.WriteString(" filehash=")
+		hdr.WriteString(first.FileHash)
 	}
-	header += " -->"
-	out = append(out, header)
+	hdr.WriteString(" -->")
+	out = append(out, hdr.String())
 
 	endIdx := min(startIdx+first.IslandTotal, len(blocks))
 	for _, sub := range blocks[startIdx:endIdx] {
