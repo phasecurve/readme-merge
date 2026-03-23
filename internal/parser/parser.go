@@ -131,11 +131,17 @@ func parseCodeBlock(lines []string, start int, m []string) (Block, int, error) {
 	return b, closeIdx, nil
 }
 
-func extractFencedContent(contentLines []string) string {
-	if len(contentLines) == 0 {
-		return ""
+func allBlank(lines []string) bool {
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return false
+		}
 	}
-	if strings.TrimSpace(strings.Join(contentLines, "")) == "" {
+	return true
+}
+
+func extractFencedContent(contentLines []string) string {
+	if len(contentLines) == 0 || allBlank(contentLines) {
 		return ""
 	}
 
@@ -198,7 +204,12 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 		})
 	}
 
-	var subBlocks []Block
+	if len(tags) == 0 {
+		return nil, 0, fmt.Errorf("line %d: island has no <lines> elements", start+1)
+	}
+
+	total := len(tags)
+	subBlocks := make([]Block, 0, total)
 	for i, tag := range tags {
 		contentStart := tag.lineIdx + 1
 		var contentEnd int
@@ -211,7 +222,7 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 		var content string
 		if contentStart < contentEnd {
 			contentLines := lines[contentStart:contentEnd]
-			if strings.TrimSpace(strings.Join(contentLines, "")) != "" {
+			if !allBlank(contentLines) {
 				content = strings.Join(contentLines, "\n") + "\n"
 			}
 		}
@@ -228,16 +239,9 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 			ReadmeEnd:   closeIdx,
 			IslandID:    islandID,
 			IslandIndex: i,
+			IslandTotal: total,
 			Render:      RenderRaw,
 		})
-	}
-
-	if len(subBlocks) == 0 {
-		return nil, 0, fmt.Errorf("line %d: island has no <lines> elements", start+1)
-	}
-
-	for i := range subBlocks {
-		subBlocks[i].IslandTotal = len(subBlocks)
 	}
 
 	return subBlocks, closeIdx, nil
@@ -314,19 +318,23 @@ func Render(original string, blocks []Block) string {
 func renderCodeBlock(b Block) []string {
 	var out []string
 
-	header := fmt.Sprintf("<!-- code from=%s", b.From)
+	var hdr strings.Builder
+	fmt.Fprintf(&hdr, "<!-- code from=%s", b.From)
 	if b.Ref != "" {
-		header += " ref=" + b.Ref
+		hdr.WriteString(" ref=")
+		hdr.WriteString(b.Ref)
 	}
-	header += fmt.Sprintf(" lines=%d-%d", b.SourceStart, b.SourceEnd)
+	fmt.Fprintf(&hdr, " lines=%d-%d", b.SourceStart, b.SourceEnd)
 	if b.FileHash != "" {
-		header += " filehash=" + b.FileHash
+		hdr.WriteString(" filehash=")
+		hdr.WriteString(b.FileHash)
 	}
 	if b.SnippetHash != "" {
-		header += " snippethash=" + b.SnippetHash
+		hdr.WriteString(" snippethash=")
+		hdr.WriteString(b.SnippetHash)
 	}
-	header += " -->"
-	out = append(out, header)
+	hdr.WriteString(" -->")
+	out = append(out, hdr.String())
 
 	lang := langFromPath(b.From)
 	content := rewriteAnchorLinks(b.Content, b.From, b.Ref)
@@ -346,18 +354,20 @@ func renderIsland(blocks []Block, startIdx int) []string {
 
 	file, repo := splitIslandFrom(first.From)
 
-	header := fmt.Sprintf("<!-- island file=%q", file)
+	var hdr strings.Builder
+	fmt.Fprintf(&hdr, "<!-- island file=%q", file)
 	if repo != "" {
-		header += fmt.Sprintf(" repo=%q", repo)
+		fmt.Fprintf(&hdr, " repo=%q", repo)
 	}
 	if first.Ref != "" {
-		header += fmt.Sprintf(" ref=%q", first.Ref)
+		fmt.Fprintf(&hdr, " ref=%q", first.Ref)
 	}
 	if first.FileHash != "" {
-		header += " filehash=" + first.FileHash
+		hdr.WriteString(" filehash=")
+		hdr.WriteString(first.FileHash)
 	}
-	header += " -->"
-	out = append(out, header)
+	hdr.WriteString(" -->")
+	out = append(out, hdr.String())
 
 	endIdx := min(startIdx+first.IslandTotal, len(blocks))
 	for _, sub := range blocks[startIdx:endIdx] {

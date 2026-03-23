@@ -61,15 +61,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	arg := os.Args[1]
-	switch {
-	case arg == "update":
+	switch os.Args[1] {
+	case "update":
 		runUpdate(os.Args[2:])
-	case arg == "check":
+	case "check":
 		runCheck(os.Args[2:])
-	case arg == "hook":
+	case "hook":
 		runHook(os.Args[2:])
-	case arg == "version" || arg == "--version" || arg == "-v":
+	case "version", "--version", "-v":
 		fmt.Printf("readme-merge %s (%s, built %s)\n", version, commit, date)
 	default:
 		usage()
@@ -237,17 +236,24 @@ func printBlock(w io.Writer, b parser.Block, full bool) {
 	fmt.Fprintf(w, "  %s\n", label)
 
 	content := strings.TrimRight(b.Content, "\n")
-	lines := strings.Split(content, "\n")
-
-	limit := min(len(lines), 3)
 	if full {
-		limit = len(lines)
+		for line := range strings.SplitSeq(content, "\n") {
+			fmt.Fprintf(w, "    %s\n", line)
+		}
+		return
 	}
-	for _, l := range lines[:limit] {
-		fmt.Fprintf(w, "    %s\n", l)
+
+	printed := 0
+	total := strings.Count(content, "\n") + 1
+	for line := range strings.SplitSeq(content, "\n") {
+		if printed >= 3 {
+			break
+		}
+		fmt.Fprintf(w, "    %s\n", line)
+		printed++
 	}
-	if !full && len(lines) > 3 {
-		fmt.Fprintf(w, "    ... (%d more lines)\n", len(lines)-3)
+	if total > 3 {
+		fmt.Fprintf(w, "    ... (%d more lines)\n", total-3)
 	}
 }
 

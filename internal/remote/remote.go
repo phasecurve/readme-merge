@@ -33,7 +33,7 @@ func CacheDir(repoURL string) string {
 	cleaned = strings.TrimPrefix(cleaned, "https://")
 	cleaned = strings.TrimPrefix(cleaned, "http://")
 
-	if _, path, ok := strings.Cut(cleaned, ":"); ok && !strings.Contains(cleaned[:strings.Index(cleaned, ":")], "/") {
+	if prefix, path, ok := strings.Cut(cleaned, ":"); ok && !strings.Contains(prefix, "/") {
 		cleaned = path
 	}
 

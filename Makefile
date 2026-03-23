@@ -6,7 +6,7 @@ DATE      := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS   := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 GOFLAGS   ?=
 
-.PHONY: build install test lint fmt vet prep check clean version release
+.PHONY: build install test test-v lint fmt vet prep check clean version release
 
 build:
 	go build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o $(BIN) $(CMD)
@@ -15,10 +15,10 @@ install:
 	go install $(GOFLAGS) -ldflags '$(LDFLAGS)' $(CMD)
 
 test:
-	go test ./... -count=1
+	go test ./... -count=1 -race
 
 test-v:
-	go test ./... -v -count=1
+	go test ./... -v -count=1 -race
 
 lint:
 	golangci-lint run ./...
