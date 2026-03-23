@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -160,7 +161,7 @@ func runCheck(args []string) {
 	if len(result.Unhashed) > 0 {
 		fmt.Fprintf(os.Stderr, "%d unhashed placeholder(s) - run 'readme-merge update' first:\n", len(result.Unhashed))
 		for _, b := range result.Unhashed {
-			printBlock(b, *full)
+			printBlock(os.Stderr, b, *full)
 		}
 		exitCode = 1
 	}
@@ -168,7 +169,7 @@ func runCheck(args []string) {
 	if len(result.Stale) > 0 {
 		fmt.Fprintf(os.Stderr, "%d stale placeholder(s):\n", len(result.Stale))
 		for _, s := range result.Stale {
-			printBlock(s.Block, *full)
+			printBlock(os.Stderr, s.Block, *full)
 		}
 		exitCode = 1
 	}
@@ -190,7 +191,7 @@ func runCheck(args []string) {
 	if len(result.FreshBlocks) > 0 {
 		fmt.Printf("%d placeholder(s) fresh:\n", result.Fresh)
 		for _, b := range result.FreshBlocks {
-			printBlock(b, *full)
+			printBlock(os.Stdout, b, *full)
 		}
 	} else {
 		fmt.Printf("%d placeholder(s) fresh\n", result.Fresh)
@@ -227,32 +228,26 @@ func runHook(args []string) {
 	}
 }
 
-func printBlock(b parser.Block, full bool) {
+func printBlock(w io.Writer, b parser.Block, full bool) {
 	label := b.From
 	if b.Ref != "" {
 		label += " ref=" + b.Ref
 	}
 	label += fmt.Sprintf(" lines %d-%d", b.SourceStart, b.SourceEnd)
-	fmt.Printf("  %s\n", label)
+	fmt.Fprintf(w, "  %s\n", label)
 
 	content := strings.TrimRight(b.Content, "\n")
 	lines := strings.Split(content, "\n")
 
+	limit := min(len(lines), 3)
 	if full {
-		for _, l := range lines {
-			fmt.Printf("    %s\n", l)
-		}
-	} else {
-		limit := 3
-		if len(lines) < limit {
-			limit = len(lines)
-		}
-		for _, l := range lines[:limit] {
-			fmt.Printf("    %s\n", l)
-		}
-		if len(lines) > 3 {
-			fmt.Printf("    ... (%d more lines)\n", len(lines)-3)
-		}
+		limit = len(lines)
+	}
+	for _, l := range lines[:limit] {
+		fmt.Fprintf(w, "    %s\n", l)
+	}
+	if !full && len(lines) > 3 {
+		fmt.Fprintf(w, "    ... (%d more lines)\n", len(lines)-3)
 	}
 }
 
