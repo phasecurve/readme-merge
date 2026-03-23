@@ -124,8 +124,13 @@ func (e *RefNotFoundError) Error() string {
 	return fmt.Sprintf("ref %q not found in %s: %s", e.Ref, e.RepoURL, e.Detail)
 }
 
+func localRef(ref string) string {
+	return "refs/readme-merge/" + strings.ReplaceAll(ref, "/", "_")
+}
+
 func (r *Resolver) fetch(repoURL, ref, bareDir string) error {
-	cmd := exec.Command("git", "-C", bareDir, "fetch", "--depth=1", "origin", ref)
+	refspec := "+" + ref + ":" + localRef(ref)
+	cmd := exec.Command("git", "-C", bareDir, "fetch", "--depth=1", "origin", refspec)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -141,7 +146,7 @@ func (r *Resolver) fetch(repoURL, ref, bareDir string) error {
 }
 
 func (r *Resolver) gitShow(bareDir, ref, filePath, repoURL string) (string, error) {
-	cmd := exec.Command("git", "-C", bareDir, "show", "FETCH_HEAD:"+filePath)
+	cmd := exec.Command("git", "-C", bareDir, "show", localRef(ref)+":"+filePath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
