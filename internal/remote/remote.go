@@ -142,7 +142,7 @@ func (r *Resolver) fetch(repoURL, ref, bareDir string) error {
 			strings.Contains(msg, "not our ref") {
 			return &RefNotFoundError{Ref: ref, RepoURL: repoURL, Detail: msg}
 		}
-		return fmt.Errorf("fetching %s from %s: %s", ref, repoURL, msg)
+		return fmt.Errorf("fetching %s from %s: %w (%s)", ref, repoURL, err, msg)
 	}
 	return nil
 }
