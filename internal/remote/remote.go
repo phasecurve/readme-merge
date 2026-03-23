@@ -29,15 +29,17 @@ func ParseFromValue(from string) (repoURL, filePath string, err error) {
 }
 
 func CacheDir(repoURL string) string {
-	name := repoURL
-	if idx := strings.LastIndex(name, "/"); idx != -1 {
-		name = name[idx+1:]
+	cleaned := strings.TrimSuffix(repoURL, ".git")
+	cleaned = strings.TrimPrefix(cleaned, "https://")
+	cleaned = strings.TrimPrefix(cleaned, "http://")
+
+	if _, path, ok := strings.Cut(cleaned, ":"); ok && !strings.Contains(cleaned[:strings.Index(cleaned, ":")], "/") {
+		cleaned = path
 	}
-	if idx := strings.LastIndex(name, ":"); idx != -1 {
-		name = name[idx+1:]
-	}
-	name = strings.TrimSuffix(name, ".git")
-	return name
+
+	cleaned = strings.ReplaceAll(cleaned, "/", "_")
+	cleaned = strings.ReplaceAll(cleaned, ":", "_")
+	return cleaned
 }
 
 type Resolver struct {
