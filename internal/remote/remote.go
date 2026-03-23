@@ -124,6 +124,8 @@ func (e *RefNotFoundError) Error() string {
 	return fmt.Sprintf("ref %q not found in %s: %s", e.Ref, e.RepoURL, e.Detail)
 }
 
+func (e *RefNotFoundError) IsRefNotFound() bool { return true }
+
 func localRef(ref string) string {
 	return "refs/readme-merge/" + strings.ReplaceAll(ref, "/", "_")
 }

@@ -1,18 +1,20 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/phasecurve/readme-merge/internal/hasher"
 	"github.com/phasecurve/readme-merge/internal/parser"
-	"github.com/phasecurve/readme-merge/internal/remote"
 	"github.com/phasecurve/readme-merge/internal/scanner"
 )
 
 type FileReader interface {
 	ReadFile(path string, ref string) (string, error)
+}
+
+type refNotFound interface {
+	IsRefNotFound() bool
 }
 
 type UpdateResult struct {
@@ -60,11 +62,10 @@ func Update(content string, reader FileReader) (*UpdateResult, error) {
 			var err error
 			fileContent, err = reader.ReadFile(b.From, b.Ref)
 			if err != nil {
-				var refErr *remote.RefNotFoundError
-				if errors.As(err, &refErr) {
+				if rnf, ok := err.(refNotFound); ok && rnf.IsRefNotFound() {
 					result.Unreachable = append(result.Unreachable, UnreachableBlock{
 						Block:   *b,
-						Message: refErr.Error(),
+						Message: err.Error(),
 					})
 					continue
 				}
@@ -142,11 +143,10 @@ func Check(content string, reader FileReader) (*CheckResult, error) {
 			var err error
 			fileContent, err = reader.ReadFile(b.From, b.Ref)
 			if err != nil {
-				var refErr *remote.RefNotFoundError
-				if errors.As(err, &refErr) {
+				if rnf, ok := err.(refNotFound); ok && rnf.IsRefNotFound() {
 					result.Unreachable = append(result.Unreachable, UnreachableBlock{
 						Block:   *b,
-						Message: refErr.Error(),
+						Message: err.Error(),
 					})
 					continue
 				}
