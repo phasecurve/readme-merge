@@ -361,9 +361,9 @@ func renderIsland(blocks []Block, startIdx int) []string {
 	header += " -->"
 	out = append(out, header)
 
-	for i := startIdx; i < startIdx+first.IslandTotal; i++ {
-		sub := blocks[i]
-		lineTag := fmt.Sprintf("<!-- lines from=%q to=%q", strconv.Itoa(sub.SourceStart), strconv.Itoa(sub.SourceEnd))
+	endIdx := min(startIdx+first.IslandTotal, len(blocks))
+	for _, sub := range blocks[startIdx:endIdx] {
+		lineTag := fmt.Sprintf("<!-- lines from=\"%d\" to=\"%d\"", sub.SourceStart, sub.SourceEnd)
 		if sub.SnippetHash != "" {
 			lineTag += " snippethash=" + sub.SnippetHash
 		}
