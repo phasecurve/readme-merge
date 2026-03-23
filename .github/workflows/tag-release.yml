@@ -1,0 +1,26 @@
+name: tag-release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version and create tag
+        run: |
+          TAG="v$(cat VERSION)"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+          echo "Creating tag $TAG"
+          git tag "$TAG"
+          git push origin "$TAG"
