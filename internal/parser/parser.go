@@ -288,9 +288,7 @@ func Render(original string, blocks []Block) string {
 	var result []string
 	prevEnd := 0
 
-	for idx := 0; idx < len(blocks); idx++ {
-		b := blocks[idx]
-
+	for idx, b := range blocks {
 		if b.Render == RenderRaw && b.IslandIndex > 0 {
 			continue
 		}
@@ -438,17 +436,14 @@ func findRepoSeparator(from string) int {
 func parseGitURL(repoURL string) (owner, repo string) {
 	repoURL = strings.TrimSuffix(repoURL, ".git")
 
-	if strings.HasPrefix(repoURL, "git@github.com:") {
-		path := strings.TrimPrefix(repoURL, "git@github.com:")
+	if path, ok := strings.CutPrefix(repoURL, "git@github.com:"); ok {
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 {
 			return parts[0], parts[1]
 		}
 	}
 
-	if strings.Contains(repoURL, "github.com/") {
-		idx := strings.Index(repoURL, "github.com/")
-		path := repoURL[idx+len("github.com/"):]
+	if _, path, ok := strings.Cut(repoURL, "github.com/"); ok {
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 {
 			return parts[0], parts[1]
