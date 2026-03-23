@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -559,6 +560,242 @@ func TestAllowsSubdirectoryFrom(t *testing.T) {
 	if !strings.Contains(string(readme), "fmt.Println") {
 		t.Errorf("code from subdirectory not injected:\n%s", readme)
 	}
+}
+
+func TestIslandSingleRange(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-single")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-single/")
+	})
+
+	out, err := runCheck(t, binPath, dir)
+	if err == nil {
+		t.Fatal("check should fail on unhashed island")
+	}
+	if !strings.Contains(out, "unhashed") {
+		t.Errorf("expected 'unhashed' message, got: %s", out)
+	}
+
+	runUpdate(t, binPath, dir)
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "Use uv for package management.") {
+		t.Errorf("island content not injected:\n%s", content)
+	}
+	if strings.Contains(content, "```") {
+		t.Errorf("island should render raw (no fences):\n%s", content)
+	}
+	if !strings.Contains(content, "snippethash=") {
+		t.Error("snippet hash not written")
+	}
+	if !strings.Contains(content, "filehash=") {
+		t.Error("file hash not written")
+	}
+
+	out, err = runCheck(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check should pass after update: %s", out)
+	}
+
+	guide, _ := os.ReadFile(filepath.Join(dir, "guide.md"))
+	modified := strings.Replace(string(guide), "Use uv for package management.", "Use pip for package management.", 1)
+	os.WriteFile(filepath.Join(dir, "guide.md"), []byte(modified), 0644)
+
+	out, err = runCheck(t, binPath, dir)
+	if err == nil {
+		t.Fatal("check should fail after source change")
+	}
+	if !strings.Contains(out, "stale") {
+		t.Errorf("expected 'stale' message, got: %s", out)
+	}
+}
+
+func TestIslandMultipleRanges(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-multi")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-multi/")
+	})
+
+	runUpdate(t, binPath, dir)
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "Use uv for package management.") {
+		t.Errorf("first range content not injected:\n%s", content)
+	}
+	if !strings.Contains(content, "Use ruff for linting and formatting.") {
+		t.Errorf("second range content not injected:\n%s", content)
+	}
+	if strings.Count(content, "<!-- island") != 1 {
+		t.Errorf("expected exactly one island opening:\n%s", content)
+	}
+	if strings.Count(content, "<!-- end island -->") != 1 {
+		t.Errorf("expected exactly one island closing:\n%s", content)
+	}
+	if strings.Count(content, "snippethash=") != 2 {
+		t.Errorf("expected 2 snippet hashes (one per range):\n%s", content)
+	}
+
+	out, err := runCheck(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check should pass after update: %s", out)
+	}
+
+	runUpdate(t, binPath, dir)
+	content2 := readFile(t, filepath.Join(dir, "README.md"))
+	if content != content2 {
+		t.Errorf("second update should be idempotent.\nfirst:\n%s\nsecond:\n%s", content, content2)
+	}
+}
+
+func TestIslandManyRanges(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-many")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-many/")
+	})
+
+	runUpdate(t, binPath, dir)
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	for _, ln := range []int{5, 15, 25, 35} {
+		expected := fmt.Sprintf("line %d", ln)
+		if !strings.Contains(content, expected) {
+			t.Errorf("missing content for range starting at line %d:\n%s", ln, content)
+		}
+	}
+	if strings.Count(content, "snippethash=") != 4 {
+		t.Errorf("expected 4 snippet hashes, got %d:\n%s", strings.Count(content, "snippethash="), content)
+	}
+
+	out, err := runCheck(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check should pass: %s", out)
+	}
+}
+
+func TestIslandZeroLinesError(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := t.TempDir()
+
+	os.WriteFile(filepath.Join(dir, "guide.md"), []byte("# Guide\n\nSome content.\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte(
+		"# Docs\n\n<!-- island file=\"guide.md\" -->\n<!-- end island -->\n",
+	), 0644)
+
+	cmd := exec.Command(binPath, "update")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("update should fail for island with no <!-- lines --> elements")
+	}
+	if !strings.Contains(string(out), "no <lines> elements") {
+		t.Errorf("expected error about no lines elements, got: %s", out)
+	}
+}
+
+func TestIslandSelfHeal(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-selfheal")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-selfheal/")
+	})
+
+	runUpdate(t, binPath, dir)
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "target line") {
+		t.Fatalf("initial content not injected:\n%s", content)
+	}
+
+	os.WriteFile(filepath.Join(dir, "guide.md"), []byte(
+		"# Guide\n\nnew top\nnew second\nline A\nline B\ntarget line\nline D\n",
+	), 0644)
+
+	out, err := runCheckWithHeal(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check --heal should pass after self-heal: %s", out)
+	}
+	if !strings.Contains(out, "self-healed") {
+		t.Errorf("expected self-heal message, got: %s", out)
+	}
+
+	content = readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "from=\"7\"") {
+		t.Errorf("line reference not updated (expected from=7):\n%s", content)
+	}
+	if !strings.Contains(content, "target line") {
+		t.Errorf("content should still be present after heal:\n%s", content)
+	}
+}
+
+func TestIslandSelfHealMultipleRangesIndependently(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-selfheal-multi")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-selfheal-multi/")
+	})
+
+	runUpdate(t, binPath, dir)
+
+	os.WriteFile(filepath.Join(dir, "guide.md"), []byte(
+		"# Guide\n\nnew line\nfirst target\n\nmiddle\n\nnew line 2\nsecond target\n\nend\n",
+	), 0644)
+
+	out, err := runCheckWithHeal(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check --heal should pass: %s", out)
+	}
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "from=\"4\"") {
+		t.Errorf("first range should heal to line 4:\n%s", content)
+	}
+	if !strings.Contains(content, "from=\"9\"") {
+		t.Errorf("second range should heal to line 9:\n%s", content)
+	}
+}
+
+func TestIslandMixedWithCode(t *testing.T) {
+	binPath := buildBinary(t)
+	dir := testdataDir("island-mixed")
+
+	t.Cleanup(func() {
+		gitCheckout(t, "test/testdata/island-mixed/")
+	})
+
+	runUpdate(t, binPath, dir)
+
+	content := readFile(t, filepath.Join(dir, "README.md"))
+	if !strings.Contains(content, "```go") {
+		t.Errorf("code block should have go fence:\n%s", content)
+	}
+	if !strings.Contains(content, "func Hello()") {
+		t.Errorf("code block content missing:\n%s", content)
+	}
+	if !strings.Contains(content, "Run the binary to get started.") {
+		t.Errorf("island content missing:\n%s", content)
+	}
+
+	out, err := runCheck(t, binPath, dir)
+	if err != nil {
+		t.Fatalf("check should pass: %s", out)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return string(data)
 }
 
 func buildBinary(t *testing.T) string {

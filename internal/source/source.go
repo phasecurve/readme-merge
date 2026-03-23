@@ -18,7 +18,7 @@ func NewResolver(ref string, baseDir string) *Resolver {
 	return &Resolver{ref: ref, baseDir: baseDir}
 }
 
-func (r *Resolver) ReadFile(path string) (string, error) {
+func (r *Resolver) ReadFile(path string, ref string) (string, error) {
 	if err := validatePath(r.baseDir, path); err != nil {
 		return "", err
 	}

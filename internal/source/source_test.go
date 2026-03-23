@@ -16,7 +16,7 @@ func TestWorktreeResolver(t *testing.T) {
 	os.WriteFile(path, []byte("package main\n"), 0644)
 
 	r := source.NewResolver("", dir)
-	content, err := r.ReadFile("example.go")
+	content, err := r.ReadFile("example.go", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestWorktreeResolver(t *testing.T) {
 func TestWorktreeResolverMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	r := source.NewResolver("", dir)
-	_, err := r.ReadFile("nonexistent.go")
+	_, err := r.ReadFile("nonexistent.go", "")
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -37,7 +37,7 @@ func TestWorktreeResolverMissingFile(t *testing.T) {
 func TestReadFileRejectsAbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	r := source.NewResolver("", dir)
-	_, err := r.ReadFile("/etc/passwd")
+	_, err := r.ReadFile("/etc/passwd", "")
 	if err == nil {
 		t.Fatal("expected error for absolute path")
 	}
@@ -49,7 +49,7 @@ func TestReadFileRejectsAbsolutePath(t *testing.T) {
 func TestReadFileRejectsParentTraversal(t *testing.T) {
 	dir := t.TempDir()
 	r := source.NewResolver("", dir)
-	_, err := r.ReadFile("../../etc/passwd")
+	_, err := r.ReadFile("../../etc/passwd", "")
 	if err == nil {
 		t.Fatal("expected error for parent traversal")
 	}
@@ -62,7 +62,7 @@ func TestReadFileRejectsNestedTraversal(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "sub"), 0755)
 	r := source.NewResolver("", dir)
-	_, err := r.ReadFile("sub/../../etc/passwd")
+	_, err := r.ReadFile("sub/../../etc/passwd", "")
 	if err == nil {
 		t.Fatal("expected error for nested traversal")
 	}
@@ -77,7 +77,7 @@ func TestReadFileAllowsSubdirectory(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte("package main\n"), 0644)
 
 	r := source.NewResolver("", dir)
-	content, err := r.ReadFile("src/main.go")
+	content, err := r.ReadFile("src/main.go", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestReadFileAllowsDotSlashPrefix(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "file.go"), []byte("hello\n"), 0644)
 
 	r := source.NewResolver("", dir)
-	content, err := r.ReadFile("./file.go")
+	content, err := r.ReadFile("./file.go", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestGitRefResolver(t *testing.T) {
 	os.WriteFile(path, []byte("v2 content\n"), 0644)
 
 	r := source.NewResolver("HEAD", dir)
-	content, err := r.ReadFile("example.go")
+	content, err := r.ReadFile("example.go", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
