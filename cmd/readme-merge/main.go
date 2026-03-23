@@ -154,6 +154,7 @@ func runCheck(args []string) {
 			fmt.Fprintf(os.Stderr, "  %s ref=%s lines %d-%d\n", u.Block.From, u.Block.Ref, u.Block.SourceStart, u.Block.SourceEnd)
 			fmt.Fprintf(os.Stderr, "    %s\n", u.Message)
 		}
+		exitCode = 1
 	}
 
 	if len(result.Unhashed) > 0 {
