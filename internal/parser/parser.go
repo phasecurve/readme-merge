@@ -204,7 +204,12 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 		})
 	}
 
-	var subBlocks []Block
+	if len(tags) == 0 {
+		return nil, 0, fmt.Errorf("line %d: island has no <lines> elements", start+1)
+	}
+
+	total := len(tags)
+	subBlocks := make([]Block, 0, total)
 	for i, tag := range tags {
 		contentStart := tag.lineIdx + 1
 		var contentEnd int
@@ -234,16 +239,9 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 			ReadmeEnd:   closeIdx,
 			IslandID:    islandID,
 			IslandIndex: i,
+			IslandTotal: total,
 			Render:      RenderRaw,
 		})
-	}
-
-	if len(subBlocks) == 0 {
-		return nil, 0, fmt.Errorf("line %d: island has no <lines> elements", start+1)
-	}
-
-	for i := range subBlocks {
-		subBlocks[i].IslandTotal = len(subBlocks)
 	}
 
 	return subBlocks, closeIdx, nil
