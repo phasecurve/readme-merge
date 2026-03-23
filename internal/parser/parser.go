@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type RenderMode string
+
+const (
+	RenderFenced RenderMode = "fenced"
+	RenderRaw    RenderMode = "raw"
+)
+
 type Block struct {
 	From        string
 	Ref         string
@@ -20,7 +27,7 @@ type Block struct {
 	IslandID    string
 	IslandIndex int
 	IslandTotal int
-	RawRender   bool
+	Render      RenderMode
 }
 
 var openRe = regexp.MustCompile(
@@ -204,7 +211,7 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 			ReadmeEnd:   closeIdx,
 			IslandID:    islandID,
 			IslandIndex: i,
-			RawRender:   true,
+			Render:      RenderRaw,
 		})
 	}
 
@@ -267,13 +274,13 @@ func Render(original string, blocks []Block) string {
 	for idx := 0; idx < len(blocks); idx++ {
 		b := blocks[idx]
 
-		if b.IslandID != "" && b.IslandIndex > 0 {
+		if b.Render == RenderRaw && b.IslandIndex > 0 {
 			continue
 		}
 
 		result = append(result, lines[prevEnd:b.ReadmeStart]...)
 
-		if b.IslandID != "" {
+		if b.Render == RenderRaw {
 			result = append(result, renderIsland(blocks, idx)...)
 		} else {
 			result = append(result, renderCodeBlock(b)...)

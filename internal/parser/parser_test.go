@@ -243,8 +243,8 @@ func TestParseIslandSingleRange(t *testing.T) {
 	if b.IslandTotal != 1 {
 		t.Errorf("IslandTotal = %d, want 1", b.IslandTotal)
 	}
-	if !b.RawRender {
-		t.Error("expected RawRender = true")
+	if b.Render != parser.RenderRaw {
+		t.Errorf("Render = %q, want %q", b.Render, parser.RenderRaw)
 	}
 }
 
