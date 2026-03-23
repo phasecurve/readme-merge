@@ -131,11 +131,17 @@ func parseCodeBlock(lines []string, start int, m []string) (Block, int, error) {
 	return b, closeIdx, nil
 }
 
-func extractFencedContent(contentLines []string) string {
-	if len(contentLines) == 0 {
-		return ""
+func allBlank(lines []string) bool {
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return false
+		}
 	}
-	if strings.TrimSpace(strings.Join(contentLines, "")) == "" {
+	return true
+}
+
+func extractFencedContent(contentLines []string) string {
+	if len(contentLines) == 0 || allBlank(contentLines) {
 		return ""
 	}
 
@@ -211,7 +217,7 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 		var content string
 		if contentStart < contentEnd {
 			contentLines := lines[contentStart:contentEnd]
-			if strings.TrimSpace(strings.Join(contentLines, "")) != "" {
+			if !allBlank(contentLines) {
 				content = strings.Join(contentLines, "\n") + "\n"
 			}
 		}
