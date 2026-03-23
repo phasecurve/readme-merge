@@ -1,33 +1,43 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/phasecurve/readme-merge/internal/hasher"
 	"github.com/phasecurve/readme-merge/internal/parser"
+	"github.com/phasecurve/readme-merge/internal/remote"
 	"github.com/phasecurve/readme-merge/internal/scanner"
 )
 
 type FileReader interface {
-	ReadFile(path string) (string, error)
+	ReadFile(path string, ref string) (string, error)
 }
 
 type UpdateResult struct {
-	Output  string
-	Updated int
-	Healed  int
+	Output      string
+	Updated     int
+	Healed      int
+	Unreachable []UnreachableBlock
 }
 
 type CheckResult struct {
-	Output   string
-	Stale    []StaleBlock
-	Unhashed []parser.Block
-	Healed   int
-	Fresh    int
+	Output      string
+	Stale       []StaleBlock
+	Unhashed    []parser.Block
+	FreshBlocks []parser.Block
+	Healed      int
+	Fresh       int
+	Unreachable []UnreachableBlock
 }
 
 type StaleBlock struct {
+	Block   parser.Block
+	Message string
+}
+
+type UnreachableBlock struct {
 	Block   parser.Block
 	Message string
 }
@@ -39,13 +49,28 @@ func Update(content string, reader FileReader) (*UpdateResult, error) {
 	}
 
 	result := &UpdateResult{}
+	fileCache := map[string]string{}
 
 	for i := range blocks {
 		b := &blocks[i]
 
-		fileContent, err := reader.ReadFile(b.From)
-		if err != nil {
-			return nil, fmt.Errorf("block %s: %w", b.From, err)
+		cacheKey := b.From + "\x00" + b.Ref
+		fileContent, ok := fileCache[cacheKey]
+		if !ok {
+			var err error
+			fileContent, err = reader.ReadFile(b.From, b.Ref)
+			if err != nil {
+				var refErr *remote.RefNotFoundError
+				if errors.As(err, &refErr) {
+					result.Unreachable = append(result.Unreachable, UnreachableBlock{
+						Block:   *b,
+						Message: refErr.Error(),
+					})
+					continue
+				}
+				return nil, fmt.Errorf("block %s: %w", b.From, err)
+			}
+			fileCache[cacheKey] = fileContent
 		}
 
 		lines := strings.Split(fileContent, "\n")
@@ -101,6 +126,7 @@ func Check(content string, reader FileReader) (*CheckResult, error) {
 
 	result := &CheckResult{}
 	needsRender := false
+	fileCache := map[string]string{}
 
 	for i := range blocks {
 		b := &blocks[i]
@@ -110,13 +136,28 @@ func Check(content string, reader FileReader) (*CheckResult, error) {
 			continue
 		}
 
-		fileContent, err := reader.ReadFile(b.From)
-		if err != nil {
-			return nil, fmt.Errorf("block %s: %w", b.From, err)
+		cacheKey := b.From + "\x00" + b.Ref
+		fileContent, ok := fileCache[cacheKey]
+		if !ok {
+			var err error
+			fileContent, err = reader.ReadFile(b.From, b.Ref)
+			if err != nil {
+				var refErr *remote.RefNotFoundError
+				if errors.As(err, &refErr) {
+					result.Unreachable = append(result.Unreachable, UnreachableBlock{
+						Block:   *b,
+						Message: refErr.Error(),
+					})
+					continue
+				}
+				return nil, fmt.Errorf("block %s: %w", b.From, err)
+			}
+			fileCache[cacheKey] = fileContent
 		}
 
 		currentFileHash := hasher.ContentHash(fileContent)
 		if currentFileHash == b.FileHash {
+			result.FreshBlocks = append(result.FreshBlocks, *b)
 			result.Fresh++
 			continue
 		}
@@ -128,6 +169,7 @@ func Check(content string, reader FileReader) (*CheckResult, error) {
 			selected := lines[b.SourceStart-1 : b.SourceEnd]
 			if hasher.SnippetHash(selected) == b.SnippetHash {
 				b.FileHash = currentFileHash
+				result.FreshBlocks = append(result.FreshBlocks, *b)
 				result.Fresh++
 				needsRender = true
 				continue
