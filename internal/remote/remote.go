@@ -29,15 +29,17 @@ func ParseFromValue(from string) (repoURL, filePath string, err error) {
 }
 
 func CacheDir(repoURL string) string {
-	name := repoURL
-	if idx := strings.LastIndex(name, "/"); idx != -1 {
-		name = name[idx+1:]
+	cleaned := strings.TrimSuffix(repoURL, ".git")
+	cleaned = strings.TrimPrefix(cleaned, "https://")
+	cleaned = strings.TrimPrefix(cleaned, "http://")
+
+	if _, path, ok := strings.Cut(cleaned, ":"); ok && !strings.Contains(cleaned[:strings.Index(cleaned, ":")], "/") {
+		cleaned = path
 	}
-	if idx := strings.LastIndex(name, ":"); idx != -1 {
-		name = name[idx+1:]
-	}
-	name = strings.TrimSuffix(name, ".git")
-	return name
+
+	cleaned = strings.ReplaceAll(cleaned, "/", "_")
+	cleaned = strings.ReplaceAll(cleaned, ":", "_")
+	return cleaned
 }
 
 type Resolver struct {
@@ -122,8 +124,15 @@ func (e *RefNotFoundError) Error() string {
 	return fmt.Sprintf("ref %q not found in %s: %s", e.Ref, e.RepoURL, e.Detail)
 }
 
+func (e *RefNotFoundError) IsRefNotFound() bool { return true }
+
+func localRef(ref string) string {
+	return "refs/readme-merge/" + strings.ReplaceAll(ref, "/", "_")
+}
+
 func (r *Resolver) fetch(repoURL, ref, bareDir string) error {
-	cmd := exec.Command("git", "-C", bareDir, "fetch", "--depth=1", "origin", ref)
+	refspec := "+" + ref + ":" + localRef(ref)
+	cmd := exec.Command("git", "-C", bareDir, "fetch", "--depth=1", "origin", refspec)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -133,13 +142,13 @@ func (r *Resolver) fetch(repoURL, ref, bareDir string) error {
 			strings.Contains(msg, "not our ref") {
 			return &RefNotFoundError{Ref: ref, RepoURL: repoURL, Detail: msg}
 		}
-		return fmt.Errorf("fetching %s from %s: %s", ref, repoURL, msg)
+		return fmt.Errorf("fetching %s from %s: %w (%s)", ref, repoURL, err, msg)
 	}
 	return nil
 }
 
 func (r *Resolver) gitShow(bareDir, ref, filePath, repoURL string) (string, error) {
-	cmd := exec.Command("git", "-C", bareDir, "show", "FETCH_HEAD:"+filePath)
+	cmd := exec.Command("git", "-C", bareDir, "show", localRef(ref)+":"+filePath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

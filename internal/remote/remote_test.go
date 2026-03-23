@@ -43,21 +43,29 @@ func TestParseFromValueMissingFilePath(t *testing.T) {
 	}
 }
 
-func TestCacheDirExtractsRepoName(t *testing.T) {
+func TestCacheDirIncludesOwner(t *testing.T) {
 	tests := []struct {
 		url  string
 		want string
 	}{
-		{"git@github.com:org/repo.git", "repo"},
-		{"git@github.com:org/shared-lib.git", "shared-lib"},
-		{"https://github.com/org/my-lib.git", "my-lib"},
-		{"git@github.com:org/repo", "repo"},
+		{"git@github.com:org/repo.git", "org_repo"},
+		{"git@github.com:org/shared-lib.git", "org_shared-lib"},
+		{"https://github.com/org/my-lib.git", "github.com_org_my-lib"},
+		{"git@github.com:org/repo", "org_repo"},
 	}
 	for _, tt := range tests {
 		got := remote.CacheDir(tt.url)
 		if got != tt.want {
 			t.Errorf("CacheDir(%q) = %q, want %q", tt.url, got, tt.want)
 		}
+	}
+}
+
+func TestCacheDirNoCollisionAcrossOrgs(t *testing.T) {
+	dir1 := remote.CacheDir("git@github.com:org-a/utils.git")
+	dir2 := remote.CacheDir("git@github.com:org-b/utils.git")
+	if dir1 == dir2 {
+		t.Errorf("different orgs with same repo name should produce different cache dirs, both got %q", dir1)
 	}
 }
 

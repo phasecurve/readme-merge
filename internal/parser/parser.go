@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type RenderMode string
+
+const (
+	RenderFenced RenderMode = "fenced"
+	RenderRaw    RenderMode = "raw"
+)
+
 type Block struct {
 	From        string
 	Ref         string
@@ -20,7 +27,7 @@ type Block struct {
 	IslandID    string
 	IslandIndex int
 	IslandTotal int
-	RawRender   bool
+	Render      RenderMode
 }
 
 var openRe = regexp.MustCompile(
@@ -67,58 +74,81 @@ func Parse(input string) ([]Block, error) {
 			continue
 		}
 
-		lineStart, err := strconv.Atoi(m[3])
+		b, closeIdx, err := parseCodeBlock(lines, i, m)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: invalid start line %q: %w", i+1, m[3], err)
+			return nil, err
 		}
-		lineEnd, err := strconv.Atoi(m[4])
-		if err != nil {
-			return nil, fmt.Errorf("line %d: invalid end line %q: %w", i+1, m[4], err)
-		}
-
-		b := Block{
-			From:        m[1],
-			Ref:         m[2],
-			SourceStart: lineStart,
-			SourceEnd:   lineEnd,
-			FileHash:    m[5],
-			SnippetHash: m[6],
-			ReadmeStart: i,
-		}
-
-		closeIdx := -1
-		for j := i + 1; j < len(lines); j++ {
-			if closeRe.MatchString(lines[j]) {
-				closeIdx = j
-				break
-			}
-		}
-		if closeIdx == -1 {
-			return nil, fmt.Errorf("line %d: unclosed <!-- code --> block", i+1)
-		}
-
-		b.ReadmeEnd = closeIdx
-
-		contentLines := lines[i+1 : closeIdx]
-		if len(contentLines) > 0 {
-			content := strings.Join(contentLines, "\n") + "\n"
-			if strings.HasPrefix(contentLines[0], "```") {
-				inner := contentLines[1:]
-				if len(inner) > 0 && strings.HasPrefix(inner[len(inner)-1], "```") {
-					inner = inner[:len(inner)-1]
-				}
-				content = strings.Join(inner, "\n") + "\n"
-			}
-			if strings.TrimSpace(strings.Join(contentLines, "")) != "" {
-				b.Content = content
-			}
-		}
-
 		blocks = append(blocks, b)
 		i = closeIdx
 	}
 
 	return blocks, nil
+}
+
+func findClose(lines []string, start int, re *regexp.Regexp) int {
+	for j := start + 1; j < len(lines); j++ {
+		if re.MatchString(lines[j]) {
+			return j
+		}
+	}
+	return -1
+}
+
+func parseCodeBlock(lines []string, start int, m []string) (Block, int, error) {
+	from := m[1]
+	ref := m[2]
+	startLine := m[3]
+	endLine := m[4]
+	fileHash := m[5]
+	snippetHash := m[6]
+
+	lineStart, err := strconv.Atoi(startLine)
+	if err != nil {
+		return Block{}, 0, fmt.Errorf("line %d: invalid start line %q: %w", start+1, startLine, err)
+	}
+	lineEnd, err := strconv.Atoi(endLine)
+	if err != nil {
+		return Block{}, 0, fmt.Errorf("line %d: invalid end line %q: %w", start+1, endLine, err)
+	}
+
+	closeIdx := findClose(lines, start, closeRe)
+	if closeIdx == -1 {
+		return Block{}, 0, fmt.Errorf("line %d: unclosed <!-- code --> block", start+1)
+	}
+
+	b := Block{
+		From:        from,
+		Ref:         ref,
+		SourceStart: lineStart,
+		SourceEnd:   lineEnd,
+		FileHash:    fileHash,
+		SnippetHash: snippetHash,
+		ReadmeStart: start,
+		ReadmeEnd:   closeIdx,
+	}
+
+	b.Content = extractFencedContent(lines[start+1 : closeIdx])
+	return b, closeIdx, nil
+}
+
+func extractFencedContent(contentLines []string) string {
+	if len(contentLines) == 0 {
+		return ""
+	}
+	if strings.TrimSpace(strings.Join(contentLines, "")) == "" {
+		return ""
+	}
+
+	content := strings.Join(contentLines, "\n") + "\n"
+	if !strings.HasPrefix(contentLines[0], "```") {
+		return content
+	}
+
+	inner := contentLines[1:]
+	if len(inner) > 0 && strings.HasPrefix(inner[len(inner)-1], "```") {
+		inner = inner[:len(inner)-1]
+	}
+	return strings.Join(inner, "\n") + "\n"
 }
 
 func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
@@ -132,13 +162,7 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 		from = repo + "//" + file
 	}
 
-	closeIdx := -1
-	for j := start + 1; j < len(lines); j++ {
-		if islandCloseRe.MatchString(lines[j]) {
-			closeIdx = j
-			break
-		}
-	}
+	closeIdx := findClose(lines, start, islandCloseRe)
 	if closeIdx == -1 {
 		return nil, 0, fmt.Errorf("line %d: unclosed <!-- island --> block", start+1)
 	}
@@ -204,7 +228,7 @@ func parseIsland(lines []string, start int, im []string) ([]Block, int, error) {
 			ReadmeEnd:   closeIdx,
 			IslandID:    islandID,
 			IslandIndex: i,
-			RawRender:   true,
+			Render:      RenderRaw,
 		})
 	}
 
@@ -264,16 +288,14 @@ func Render(original string, blocks []Block) string {
 	var result []string
 	prevEnd := 0
 
-	for idx := 0; idx < len(blocks); idx++ {
-		b := blocks[idx]
-
-		if b.IslandID != "" && b.IslandIndex > 0 {
+	for idx, b := range blocks {
+		if b.Render == RenderRaw && b.IslandIndex > 0 {
 			continue
 		}
 
 		result = append(result, lines[prevEnd:b.ReadmeStart]...)
 
-		if b.IslandID != "" {
+		if b.Render == RenderRaw {
 			result = append(result, renderIsland(blocks, idx)...)
 		} else {
 			result = append(result, renderCodeBlock(b)...)
@@ -337,9 +359,9 @@ func renderIsland(blocks []Block, startIdx int) []string {
 	header += " -->"
 	out = append(out, header)
 
-	for i := startIdx; i < startIdx+first.IslandTotal; i++ {
-		sub := blocks[i]
-		lineTag := fmt.Sprintf("<!-- lines from=%q to=%q", strconv.Itoa(sub.SourceStart), strconv.Itoa(sub.SourceEnd))
+	endIdx := min(startIdx+first.IslandTotal, len(blocks))
+	for _, sub := range blocks[startIdx:endIdx] {
+		lineTag := fmt.Sprintf("<!-- lines from=\"%d\" to=\"%d\"", sub.SourceStart, sub.SourceEnd)
 		if sub.SnippetHash != "" {
 			lineTag += " snippethash=" + sub.SnippetHash
 		}
@@ -414,17 +436,14 @@ func findRepoSeparator(from string) int {
 func parseGitURL(repoURL string) (owner, repo string) {
 	repoURL = strings.TrimSuffix(repoURL, ".git")
 
-	if strings.HasPrefix(repoURL, "git@github.com:") {
-		path := strings.TrimPrefix(repoURL, "git@github.com:")
+	if path, ok := strings.CutPrefix(repoURL, "git@github.com:"); ok {
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 {
 			return parts[0], parts[1]
 		}
 	}
 
-	if strings.Contains(repoURL, "github.com/") {
-		idx := strings.Index(repoURL, "github.com/")
-		path := repoURL[idx+len("github.com/"):]
+	if _, path, ok := strings.Cut(repoURL, "github.com/"); ok {
 		parts := strings.SplitN(path, "/", 2)
 		if len(parts) == 2 {
 			return parts[0], parts[1]
