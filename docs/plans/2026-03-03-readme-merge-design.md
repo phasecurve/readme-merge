@@ -25,8 +25,9 @@ Dev writes:
 
 After `readme-merge update`:
 
-```markdown
+````markdown
 <!-- code from=examples/client.go lines=10-25 filehash=abc123 snippethash=def456 -->
+
 ```go
 client := NewClient(os.Getenv("API_KEY"))
 resp, err := client.Send("hello")
@@ -34,8 +35,9 @@ if err != nil {
     log.Fatal(err)
 }
 ```
+
 <!-- /code -->
-```
+````
 
 The opening comment stores metadata. The closing `<!-- /code -->` marks the end
 of the injected block. GitHub renders HTML comments as invisible, so readers see
